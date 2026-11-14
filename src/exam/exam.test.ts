@@ -89,6 +89,11 @@ function validOptions(q: Question): number[] | null {
       expect(values.filter((v) => v === want)).toHaveLength(1);
       return valid((o) => calc(o) === want);
     }
+    case 'triangle': {
+      // △ is a single digit; check each option by substituting it into the equation
+      const line = q.lines![0];
+      return valid((o) => equationHolds(line.replace(/△/g, o)));
+    }
     default:
       return null;
   }

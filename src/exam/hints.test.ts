@@ -444,7 +444,7 @@ describe('finding the jumps on sequence arrows', () => {
 });
 
 describe('trying digits for ☀ (digit)', () => {
-  const columns = withVisual('column');
+  const columns = withVisual('column').filter(({ q }) => q.type === 'digit');
 
   it('every digit gets the same kind of line, with no ✓ or ✗: it never tells which digit is right', () => {
     for (const { q, v } of columns) {

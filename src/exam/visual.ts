@@ -786,12 +786,13 @@ function clockLive(v: Of<'clock'>, keep: VisKeep): HTMLElement {
 function column(v: Of<'column'>): SVGSVGElement {
   const cw = 34;
   const rowH = 40;
+  const sym = v.symbol ?? '☀';
   const cols = Math.max(...[v.top, v.add, v.result].map((s) => [...s].length));
   const x1 = W / 2 + (cols * cw) / 2;
   const svg = frame(rowH * 3 + 18, 'תרגיל במאונך');
   svg.append(svgEl('rect', { x: x1 - cw, y: 2, width: cw, height: rowH * 3 + 12, rx: 10, fill: '#fff1a8' }));
   const row = (s: string, y: number) =>
-    [...s].reverse().forEach((ch, k) => svg.append(label(x1 - cw / 2 - k * cw, y, ch, { size: 26, weight: 800, color: ch === '☀' ? C.gold : C.ink })));
+    [...s].reverse().forEach((ch, k) => svg.append(label(x1 - cw / 2 - k * cw, y, ch, { size: 26, weight: 800, color: ch === sym ? C.gold : C.ink })));
   row(v.top, 6 + rowH / 2);
   row(v.add, 6 + rowH * 1.5);
   svg.append(label(x1 - cols * cw - 16, 6 + rowH * 1.5, '+', { size: 26, weight: 800 }));
@@ -834,5 +835,6 @@ export function renderVisual(v: Visual, keep: VisKeep = {}): Element {
   if (v.kind === 'chain') return chainLive(v, keep);
   if (v.kind === 'groups') return v.per === null && v.loose ? dealGroups(v, keep) : groups(v, keep);
   if (v.kind === 'clock') return clockLive(v, keep);
-  return columnLive(v, keep);
+  // column: interactive digit trial only for ☀; △ (triangle) gets a static drawing
+  return v.symbol && v.symbol !== '☀' ? column(v) : columnLive(v, keep);
 }

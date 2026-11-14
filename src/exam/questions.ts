@@ -38,7 +38,8 @@ export type MathType =
   | 'proportion'
   | 'time'
   | 'sequence'
-  | 'compare';
+  | 'compare'
+  | 'triangle';
 export type QType = MathType | 'reading';
 
 export type Question = {
@@ -74,6 +75,7 @@ export const TYPE_NAMES: Record<QType, string> = {
   time: 'שעון וזמן',
   sequence: 'סדרות',
   compare: 'איזה תרגיל גדול יותר',
+  triangle: 'תרגילי משולשים △',
   reading: 'הבנת הנקרא',
 };
 
@@ -1109,6 +1111,94 @@ function compare(r: Rng): Question {
   });
 }
 
+// ---------- T11 תרגילי משולשים △ ----------
+
+const TRI = '△';
+
+/** Every △ hides the same digit; find it. Four templates mirroring the real test. */
+function triangle(r: Rng): Question {
+  const kind = pick(r, ['addPair', 'mulSub', 'triple', 'twin'] as const);
+  const openQ = r() < 0.3;
+  const base = (line: string, d: number, wrongs: Wrong[], explain: string, hint: Hint): Question => {
+    const b: Question = {
+      type: 'triangle',
+      prompt: `כל ${TRI} מסתיר אותה ספרה. איזו ספרה היא ${TRI}?`,
+      lines: [line],
+      mathOptions: true,
+      explain,
+      ...numberChoice(r, d, wrongs, { max: 9 }),
+    };
+    return withHint(openQ ? { ...b, ...open(d) } : b, hint);
+  };
+
+  if (kind === 'addPair') {
+    // a△ + b△ = total, e.g. 1△ + 3△ = 44 (d=2). total = 10(a+b) + 2d.
+    const d = int(r, 1, 9);
+    const sumAb = int(r, 2, 10);
+    const a = int(r, 1, sumAb - 1);
+    const b = sumAb - a;
+    const total = 10 * sumAb + 2 * d;
+    const line = `${a}${TRI} + ${b}${TRI} = ${total}`;
+    const explain = `האחדות: ${TRI} + ${TRI} = ${L(`2 × ${d} = ${2 * d}`)}, והעשרות: ${L(`${10 * a} + ${10 * b} = ${10 * sumAb}`)}. יחד ${L(String(total))}, אז ${TRI} = ${L(d)}`;
+    return base(
+      line,
+      d,
+      [[Math.floor(total / 10), 'זו סכום העשרות, לא הספרה.'], [2 * d % 10, 'זה סכום האחדות, לא הספרה עצמה.'], d + 1, d - 1],
+      explain,
+      {
+        ask: `מסתכלים על עמודת האחדות: ${TRI} + ${TRI} נגמר ב־${L(total % 10)}. איזו ספרה ועוד אותה ספרה נותנת את זה?`,
+        visual: { kind: 'column', top: `${a}${TRI}`, add: `${b}${TRI}`, result: String(total), symbol: TRI },
+        steps: [{ text: `${10 * a} + ${10 * b} = ⬜`, answer: 10 * sumAb }],
+        after: `עכשיו האחדות: כמה חסר מ־${L(total)} עד סכום העשרות? זה פעמיים ${TRI} 😉`,
+      },
+    );
+  }
+  if (kind === 'mulSub') {
+    // △ × △ − △ = n, e.g. 5 × 5 − 5 = 20. n = d² − d = d(d−1).
+    const d = int(r, 2, 9);
+    const n = d * d - d;
+    const line = `${TRI} × ${TRI} − ${TRI} = ${n}`;
+    const explain = `מציבים ${TRI} = ${L(d)}: ${L(`${d} × ${d} − ${d} = ${d * d} − ${d} = ${n}`)} ✓`;
+    return base(
+      line,
+      d,
+      [[Math.round(Math.sqrt(n)), 'זה שורש התוצאה, לא הספרה.'], [d + 1, ''], [d - 1, ''], d + 2],
+      explain,
+      { ask: `כל ${TRI} הוא אותה ספרה. נסי להציב ספרה ולבדוק: קודם כפל, ואז חיסור.` },
+    );
+  }
+  if (kind === 'triple') {
+    // △ + △ + △ = n, e.g. 8 + 8 + 8 = 24. n = 3d.
+    const d = int(r, 1, 9);
+    const n = 3 * d;
+    const line = `${TRI} + ${TRI} + ${TRI} = ${n}`;
+    const explain = `שלוש פעמים ${TRI} שווה ${L(n)}: ${L(`${n} ÷ 3 = ${d}`)}, אז ${TRI} = ${L(d)}`;
+    return base(
+      line,
+      d,
+      [[Math.round(n / 3) + 1, ''], [Math.round(n / 3) - 1, ''], [n - 3, 'זה 3 × 2, לא 3 × הספרה.'], n % 10],
+      explain,
+      { ask: `שלוש פעמים אותה ספרה שווה ${L(n)}. איזו ספרה כשמכפילים אותה שלוש פעמים מקבלים ${L(n)}?` },
+    );
+  }
+  // twin: △△ + add = total, e.g. 33 + 12 = 45. △△ = 11d.
+  const d = int(r, 1, 9);
+  const add = int(r, 2, 30);
+  const total = 11 * d + add;
+  const line = `${TRI}${TRI} + ${add} = ${total}`;
+  const explain = `${TRI}${TRI} הוא מספר עם שתי ספרות זהות: ${L(`${total} − ${add} = ${11 * d}`)}, ו־${L(`${11 * d} ÷ 11 = ${d}`)}, אז ${TRI} = ${L(d)}`;
+  return base(
+    line,
+    d,
+    [[Math.floor(11 * d / 10), 'זו ספרת העשרות של △△, לא △ עצמה.'], [d + 1, ''], [d - 1, ''], Math.floor(add / 10)],
+    explain,
+    {
+      ask: `${TRI}${TRI} הוא מספר עם שתי ספרות זהות (כמו ${L(22)} או ${L(55)}). איזה מספר כזה ועוד ${L(add)} נותן ${L(total)}?`,
+      visual: { kind: 'column', top: `${TRI}${TRI}`, add: String(add), result: String(total), symbol: TRI },
+    },
+  );
+}
+
 export const MATH_GENERATORS: Record<MathType, (r: Rng) => Question> = {
   arith,
   missing,
@@ -1120,12 +1210,13 @@ export const MATH_GENERATORS: Record<MathType, (r: Rng) => Question> = {
   time,
   sequence,
   compare,
+  triangle,
 };
 
 /** 15 questions, about the size of the real math section, covering every type. */
 export const MATH_EXAM_PLAN: MathType[] = [
   'arith', 'missing', 'word', 'inequality', 'pictures', 'arith', 'word', 'digit',
-  'missing', 'time', 'proportion', 'sequence', 'word', 'compare', 'pictures',
+  'missing', 'time', 'proportion', 'sequence', 'word', 'compare', 'pictures', 'triangle',
 ];
 
 export function mathExam(seed: number): Question[] {

@@ -27,8 +27,9 @@ export type Visual =
    * the answer is a clock time, so the added time is not the answer). The hands' time is never written.
    */
   | { kind: 'clock'; start: number; caption: string; target?: { t: number; caption: string }; adds: number[]; elapsed: boolean }
-  /** A vertical (column) addition with the ones column highlighted. */
-  | { kind: 'column'; top: string; add: string; result: string };
+  /** A vertical (column) addition with the ones column highlighted. `symbol` is the hidden digit (☀ by default,
+   * △ for triangle puzzles); when it isn't ☀ the drawing is static (no digit-chip trial). */
+  | { kind: 'column'; top: string; add: string; result: string; symbol?: string };
 
 export type ChainArc = { from: number; to: number; label: string; below?: boolean; jump?: number };
 
@@ -63,7 +64,7 @@ export function hintTexts(h: Hint): string[] {
   if (v.kind === 'chain') out.push(...v.items, ...v.arcs.map((a) => a.label));
   if (v.kind === 'groups') out.push(v.inner ?? '', v.cap ?? '', v.total ?? '', v.note ?? '', v.per !== null ? String(v.per) : '');
   if (v.kind === 'clock') out.push(v.caption, v.target?.caption ?? '');
-  if (v.kind === 'column') out.push(v.top, v.add, v.result);
+  if (v.kind === 'column') out.push(v.top, v.add, v.result, v.symbol ?? '');
   return out;
 }
 

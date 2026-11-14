@@ -174,22 +174,24 @@ export function chainScene(v: Of<'chain'>, s: ChainState): { labels: string[]; t
 // ---------- column addition: she tries digits for ☀ ----------
 
 export const SUN = '☀';
+export const TRI = '△';
 export const DIGIT_PICK = `👆 נסי ספרה במקום ${SUN}`;
 export const DIGITS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 /**
- * The ones column with her digit in place of ☀, e.g. "6 + 4 = 10". It's the same kind of line for every digit, with
- * no ✓ or ✗, so it never tells which digit is right: she compares it with the result herself.
+ * The ones column with her digit in place of the hidden symbol (☀ or △), e.g. "6 + 4 = 10". It's the same kind of
+ * line for every digit, with no ✓ or ✗, so it never tells which digit is right: she compares it with the result herself.
  */
 export function digitLine(v: Of<'column'>, pick: number): string {
+  const sym = v.symbol ?? SUN;
   const ones = [v.top, v.add].map((s) => [...s].pop()!);
-  const vals = ones.map((c) => (c === SUN ? pick : Number(c)));
+  const vals = ones.map((c) => (c === sym ? pick : Number(c)));
   return `${vals[0]} + ${vals[1]} = ${vals[0] + vals[1]}`;
 }
 
 export function digitScene(v: Of<'column'>, pick: number | null): { line: string; texts: string[] } {
   const line = pick === null ? '' : digitLine(v, pick);
-  return { line, texts: [v.top, v.add, v.result, DIGIT_PICK, ...DIGITS.map(String), line].filter(Boolean) };
+  return { line, texts: [v.top, v.add, v.result, v.symbol ?? '', DIGIT_PICK, ...DIGITS.map(String), line].filter(Boolean) };
 }
 
 // ---------- groups: tap to light a group up while counting ----------
