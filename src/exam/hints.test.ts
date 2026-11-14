@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { clock, MATH_GENERATORS, rng, type MathType, type Question } from './questions';
-import { hintTexts, numbersIn, type HintStep, type Visual } from './hints';
+import { deal, dealDone, hintTexts, numbersIn, startDeal, type HintStep, type Visual } from './hints';
+import { dealScene } from './visual';
 
 const SEEDS = Array.from({ length: 400 }, (_, i) => i * 7919 + 1);
 const HINTED = Object.keys(MATH_GENERATORS) as MathType[];
@@ -147,6 +148,65 @@ describe('hint ladders have substance', () => {
       const qs = SEEDS.map((s) => MATH_GENERATORS[t](rng(s)));
       expect(qs.filter((q) => q.hint?.visual).length / qs.length, t).toBeGreaterThan(0.9);
       expect(qs.filter((q) => q.hint?.steps?.length).length / qs.length, t).toBeGreaterThan(0.6);
+    }
+  });
+});
+
+describe('dealing dots into groups (÷ drawings)', () => {
+  const dealt = HINTED.flatMap((t) =>
+    SEEDS.map((s) => MATH_GENERATORS[t](rng(s))).flatMap((q) => {
+      const v = q.hint?.visual;
+      return v?.kind === 'groups' && v.per === null ? [{ q, v }] : [];
+    }),
+  );
+
+  it('is used by ÷, share, the missing × forms and proportion', () => {
+    expect(new Set(dealt.map(({ q }) => q.type))).toEqual(new Set(['arith', 'word', 'missing', 'proportion']));
+  });
+
+  it('ends with every group holding total ÷ groups, and the pile empty', () => {
+    for (const { q, v } of dealt) {
+      expect(v.loose, where(q)).toBeDefined();
+      let s = startDeal(v.loose!, v.n);
+      let taps = 0;
+      while (!dealDone(s)) {
+        s = deal(s);
+        taps++;
+      }
+      expect(s.pile, where(q)).toBe(0);
+      expect(s.groups, where(q)).toEqual(Array(v.n).fill(v.loose! / v.n));
+      expect(deal(s), where(q)).toBe(s);
+      expect(taps, where(q)).toBe(v.loose! / v.n);
+    }
+  });
+
+  it('never writes the per-group count: not in the data, not in any drawn text, at any point of the deal', () => {
+    for (const { q, v } of dealt) {
+      const per = v.loose! / v.n;
+      expect(v.inner ?? v.cap ?? '', where(q)).toBe('');
+      for (let s = startDeal(v.loose!, v.n); ; s = deal(s)) {
+        const sc = dealScene(v, s);
+        expect(sc.dots, where(q)).toHaveLength(v.loose!);
+        expect(sc.dots.filter((d) => !d.dealt), where(q)).toHaveLength(s.pile);
+        for (const text of sc.texts) expect(numbersIn(text), `${where(q)} "${text}"`).not.toContain(per);
+        if (sc.done) break;
+      }
+    }
+  });
+
+  it('fits the drawing: dots inside their circles, circles inside the 320 wide frame', () => {
+    for (const { q, v } of dealt) {
+      let s = startDeal(v.loose!, v.n);
+      while (!dealDone(s)) s = deal(s);
+      const sc = dealScene(v, s);
+      for (const c of sc.circles) {
+        expect(c.cx - c.r, where(q)).toBeGreaterThanOrEqual(0);
+        expect(c.cx + c.r, where(q)).toBeLessThanOrEqual(320);
+      }
+      for (const d of sc.dots) {
+        const inside = sc.circles.some((c) => Math.hypot(d.x - c.cx, d.y - c.cy) + 3.4 <= c.r);
+        expect(inside, where(q)).toBe(true);
+      }
     }
   });
 });

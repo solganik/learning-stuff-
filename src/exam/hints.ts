@@ -150,3 +150,19 @@ export function nearbyFact(k: number, x: number): { steps: HintStep[]; after: st
   const ref = order.find((m) => m !== x && k * m !== x)!;
   return { steps: [{ text: `${k} × ${ref} = ⬜`, answer: k * ref }], after: `צריך יותר או פחות מ־${L(ref)}?` };
 }
+
+// ---------- dealing dots into groups (÷ drawings) ----------
+
+/** Dots still in the pile, and how many each group got so far. */
+export type Deal = { pile: number; groups: number[] };
+
+export const startDeal = (total: number, k: number): Deal => ({ pile: total, groups: Array<number>(k).fill(0) });
+
+/** The pile can't give every group one more dot. */
+export const dealDone = (s: Deal): boolean => s.pile < s.groups.length;
+
+/** One tap: one dot from the pile into each group. */
+export function deal(s: Deal): Deal {
+  if (dealDone(s)) return s;
+  return { pile: s.pile - s.groups.length, groups: s.groups.map((g) => g + 1) };
+}

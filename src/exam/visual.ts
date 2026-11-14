@@ -1,5 +1,5 @@
 /** Hint drawings as inline SVG, built only from what the hint data holds (so they never show the answer). */
-import type { BarRow, Seg, Visual } from './hints';
+import { deal, dealDone, startDeal, type BarRow, type Deal, type Seg, type Visual } from './hints';
 
 const NS = 'http://www.w3.org/2000/svg';
 const W = 320;
@@ -233,11 +233,13 @@ function dotGrid(svg: SVGSVGElement, cx: number, cy: number, n: number, cols: nu
   }
 }
 
-function groups(v: Extract<Visual, { kind: 'groups' }>): SVGSVGElement {
+type Groups = Extract<Visual, { kind: 'groups' }>;
+
+function groups(v: Groups): SVGSVGElement {
   const perRow = Math.min(v.n, 5);
   const cell = W / perRow;
   const dots = v.per !== null && v.per <= DOTS_MAX && !v.inner;
-  const cols = v.cols ?? (v.per && v.per > 9 ? 5 : v.per && v.per > 4 ? 3 : 2);
+  const cols = v.cols ?? 5;
   const step = v.per && v.per > 12 ? 8 : 10;
   const rDots = dots ? Math.hypot((Math.min(cols, v.per!) - 1) * step, (Math.ceil(v.per! / cols) - 1) * step) / 2 + 9 : 0;
   const r = Math.min(cell / 2 - 3, Math.max(24, rDots));
@@ -271,6 +273,125 @@ function groups(v: Extract<Visual, { kind: 'groups' }>): SVGSVGElement {
   }
   if (v.total) svg.append(label(W / 2, h - 13, v.total === '?' ? 'בסך הכול: ?' : `בסך הכול: ${v.total}`, { size: 15, color: C.ink }));
   return svg;
+}
+
+// ---------- dealing: tap to give every group one more dot (the per-group count is never written) ----------
+
+export const DEAL_BUTTON = '👆 תני לכל קבוצה אחת';
+export const DEAL_DONE = 'כל הנקודות חולקו! כמה יש בכל קבוצה? 🤔';
+const DOT_R = 3.4;
+const STEP = 9;
+const PILE_STEP = 11;
+const FRAME_GAP = 10;
+
+/** Smallest circle that holds c dots in rows of 5. */
+const ringR = (c: number) =>
+  c ? Math.max(14, Math.hypot((Math.min(c, 5) - 1) * STEP, (Math.ceil(c / 5) - 1) * STEP) / 2 + DOT_R + 5) : 14;
+
+export type DealScene = {
+  h: number;
+  /** One entry per dot: where it is now, and whether it already sits in a group. */
+  dots: { x: number; y: number; dealt: boolean }[];
+  circles: { cx: number; cy: number; r: number }[];
+  /** Every text the drawing shows (the button and messages included). */
+  texts: string[];
+  done: boolean;
+};
+
+/**
+ * Where everything is for this deal state. Pure (no DOM), so tests can check it. The pile is ten-frames (two rows
+ * of 5), filled right to left; dealing takes dots from the end of the pile, one round of k dots per tap.
+ */
+export function dealScene(v: Groups, s: Deal): DealScene {
+  const total = s.pile + s.groups.reduce((t, g) => t + g, 0);
+  const k = v.n;
+  const per = Math.ceil(total / k);
+  const frameW = 4 * PILE_STEP + 2 * DOT_R;
+  const framesPerRow = Math.floor((W + FRAME_GAP) / (frameW + FRAME_GAP));
+  const frames = Math.ceil(total / 10);
+  const frameRows = Math.ceil(frames / framesPerRow);
+  const frameH = PILE_STEP + 2 * DOT_R;
+  const pileTop = 6;
+  const pileH = frameRows * (frameH + 8) - 8;
+  const pileAt = (i: number) => {
+    const f = Math.floor(i / 10);
+    const fr = Math.floor(f / framesPerRow);
+    const inRow = Math.min(framesPerRow, frames - fr * framesPerRow);
+    const rowW = inRow * frameW + (inRow - 1) * FRAME_GAP;
+    const right = (W + rowW) / 2 - (f % framesPerRow) * (frameW + FRAME_GAP) - DOT_R;
+    const j = i % 10;
+    return { x: right - (j % 5) * PILE_STEP, y: pileTop + fr * (frameH + 8) + DOT_R + Math.floor(j / 5) * PILE_STEP };
+  };
+  const rMax = ringR(per);
+  const cell = 2 * rMax + 8;
+  const perRow = k <= 5 ? k : Math.ceil(k / 2);
+  const rows = Math.ceil(k / perRow);
+  const circlesTop = pileTop + pileH + 16;
+  const centers = Array.from({ length: k }, (_, j) => {
+    const row = Math.floor(j / perRow);
+    const inRow = Math.min(perRow, k - row * perRow);
+    return { cx: W / 2 + ((inRow - 1) / 2 - (j % perRow)) * cell, cy: circlesTop + row * cell + rMax + 4 };
+  });
+  const dealt = s.groups[0] ?? 0;
+  const circles = centers.map((c) => ({ ...c, r: ringR(dealt) }));
+  const inRing = (j: number, slot: number) => {
+    const ringRows = Math.ceil(dealt / 5);
+    const row = Math.floor(slot / 5);
+    const inRow = Math.min(5, dealt - row * 5);
+    return { x: centers[j].cx + ((inRow - 1) / 2 - (slot % 5)) * STEP, y: centers[j].cy + (row - (ringRows - 1) / 2) * STEP };
+  };
+  const dots = Array.from({ length: total }, (_, d) => {
+    if (d < s.pile) return { ...pileAt(d), dealt: false };
+    const e = total - 1 - d;
+    return { ...inRing(e % k, Math.floor(e / k)), dealt: true };
+  });
+  const done = dealDone(s);
+  const totalText = v.total ? [`בסך הכול: ${v.total}`] : [];
+  return {
+    h: circlesTop + rows * cell + (totalText.length ? 26 : 4),
+    dots,
+    circles,
+    texts: [v.note ?? '', ...totalText, done ? DEAL_DONE : DEAL_BUTTON].filter(Boolean),
+    done,
+  };
+}
+
+/** The dealing drawing. `keep.deal` holds the state, so it survives the ladder re-rendering. */
+function dealGroups(v: Groups, keep: { deal?: Deal }): HTMLElement {
+  keep.deal ??= startDeal(v.loose!, v.n);
+  const first = dealScene(v, keep.deal);
+  const box = document.createElement('div');
+  box.className = 'deal';
+  if (v.note) box.append(Object.assign(document.createElement('p'), { className: 'deal-note', textContent: v.note }));
+  const btn = Object.assign(document.createElement('button'), { type: 'button', className: 'deal-btn', textContent: DEAL_BUTTON });
+  const msg = Object.assign(document.createElement('p'), { className: 'deal-done', textContent: DEAL_DONE });
+  const svg = frame(first.h, 'קבוצות');
+  svg.classList.add('deal-svg');
+  const rings = first.circles.map((c) => svgEl('circle', { cx: c.cx, cy: c.cy, r: c.r, class: 'deal-ring', 'stroke-width': 2 }));
+  const dots = first.dots.map(() => svgEl('circle', { cx: 0, cy: 0, r: DOT_R, class: 'deal-dot' }));
+  svg.append(...rings, ...dots);
+  if (v.total) svg.append(label(W / 2, first.h - 13, `בסך הכול: ${v.total}`, { size: 15, color: C.ink }));
+  const paint = (s: Deal) => {
+    const sc = dealScene(v, s);
+    sc.circles.forEach((c, j) => {
+      rings[j].setAttribute('r', String(c.r));
+      rings[j].style.setProperty('r', `${c.r}px`);
+      rings[j].classList.toggle('full', sc.done);
+    });
+    sc.dots.forEach((d, i) => {
+      dots[i].style.transform = `translate(${d.x}px, ${d.y}px)`;
+      dots[i].classList.toggle('dealt', d.dealt);
+    });
+    btn.hidden = sc.done;
+    msg.hidden = !sc.done;
+  };
+  btn.addEventListener('click', () => {
+    keep.deal = deal(keep.deal!);
+    paint(keep.deal);
+  });
+  paint(keep.deal);
+  box.append(btn, msg, svg);
+  return box;
 }
 
 // ---------- clock ----------
@@ -358,11 +479,12 @@ function column(v: Extract<Visual, { kind: 'column' }>): SVGSVGElement {
   return svg;
 }
 
-export function renderVisual(v: Visual): SVGSVGElement {
+/** `keep` carries interactive state (the deal) across re-renders of the same hint. */
+export function renderVisual(v: Visual, keep: { deal?: Deal } = {}): Element {
   if (v.kind === 'bar') return bar(v);
   if (v.kind === 'line') return line(v);
   if (v.kind === 'chain') return chain(v);
-  if (v.kind === 'groups') return groups(v);
+  if (v.kind === 'groups') return v.per === null && v.loose ? dealGroups(v, keep) : groups(v);
   if (v.kind === 'clock') return clockFaces(v);
   return column(v);
 }
