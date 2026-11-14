@@ -1,5 +1,33 @@
-/** Hint drawings as inline SVG, built only from what the hint data holds (so they never show the answer). */
-import { deal, dealDone, startDeal, type BarRow, type Deal, type Seg, type Visual } from './hints';
+/**
+ * Hint drawings as inline SVG, built only from what the hint data holds (so they never show the answer). Most of them
+ * are things she does with her finger; their state logic lives in interact.ts (pure, tested state by state).
+ */
+import { deal, dealDone, startDeal, type BarRow, type Deal, type Seg, type VisKeep, type Visual } from './hints';
+import {
+  BAR_NOT_HERE,
+  barChips,
+  barDrop,
+  barScene,
+  barSelect,
+  barSlots,
+  barStart,
+  CHAIN_PICK,
+  chainOpen,
+  chainQuestion,
+  chainScene,
+  chainStart,
+  chainTry,
+  CLOCK_RESET,
+  clockPress,
+  clockScene,
+  DIGIT_PICK,
+  DIGITS,
+  digitScene,
+  GROUPS_TAP,
+  LINE_AGAIN,
+  lineScene,
+  litToggle,
+} from './interact';
 
 const NS = 'http://www.w3.org/2000/svg';
 const W = 320;
@@ -7,6 +35,7 @@ const C = { ink: '#4a2361', pink: '#ff5fa2', soft: '#ffd6ec', purple: '#8e5cf7',
 const BAR_FILLS = ['#ffd6ec', '#e3d6ff', '#cff3ee', '#fff0bf'];
 
 type Attrs = Record<string, string | number>;
+type Of<K extends Visual['kind']> = Extract<Visual, { kind: K }>;
 
 function svgEl<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Attrs = {}, text = ''): SVGElementTagNameMap[K] {
   const node = document.createElementNS(NS, tag);
@@ -15,9 +44,30 @@ function svgEl<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Attrs = {}, 
   return node;
 }
 
+function html<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text) node.textContent = text;
+  return node;
+}
+
+function btn(cls: string, text: string, onTap: () => void): HTMLButtonElement {
+  const b = html('button', cls, text);
+  b.type = 'button';
+  b.addEventListener('click', onTap);
+  return b;
+}
+
+/** Restart a one-shot CSS animation (wiggle) on an element. */
+function replay(node: Element, cls: string): void {
+  node.classList.remove(cls);
+  void (node as HTMLElement).getBoundingClientRect();
+  node.classList.add(cls);
+}
+
 function label(x: number, y: number, text: string, o: { size?: number; color?: string; weight?: number; anchor?: string } = {}): SVGTextElement {
   const q = text === '?';
-  const hebrew = /[\u0590-\u05ff]/.test(text);
+  const hebrew = /[֐-׿]/.test(text);
   // in an rtl text run, "start" is the right edge
   const anchor = hebrew && o.anchor === 'end' ? 'start' : (o.anchor ?? 'middle');
   const node = svgEl(
@@ -49,16 +99,26 @@ function frame(h: number, title: string): SVGSVGElement {
   return svg;
 }
 
+/** The box an interactive drawing lives in: an optional instruction line, the drawing, then its controls. */
+function liveBox(cls: string, tip?: string): HTMLDivElement {
+  const box = html('div', `vis ${cls}`);
+  if (tip) box.append(html('p', 'vis-tip', tip));
+  return box;
+}
+
 const textW = (s: string, size = 15) => [...s].length * size * 0.62 + 8;
 
 // ---------- bar model (drawn right to left, like the Hebrew sentence) ----------
 
-function bar(v: Extract<Visual, { kind: 'bar' }>): SVGSVGElement {
+type BarDraw = { svg: SVGSVGElement; boxes: Map<string, { g: SVGGElement; rect: SVGRectElement; text: SVGTextElement }> };
+
+/** `live`: taller boxes for fingers, and number boxes start empty (she fills them). */
+function barDraw(v: Of<'bar'>, live: boolean): BarDraw {
   const named = v.rows.some((r) => r.name);
   const nameW = named ? Math.max(...v.rows.map((r) => textW(r.name ?? '', 14))) + 6 : 0;
   const side = v.total && v.rows.length > 1 ? 34 : 0;
   const barW = W - nameW - side - 4;
-  const minW = (s: Seg) => Math.max(26, textW(s.label));
+  const minW = (s: Seg) => Math.max(live ? 46 : 26, textW(s.label));
   // biggest scale at which every row still fits once small segments are widened to fit their labels
   let lo = 0;
   let hi = 100;
@@ -69,10 +129,11 @@ function bar(v: Extract<Visual, { kind: 'bar' }>): SVGSVGElement {
     else hi = mid;
   }
   const scale = lo;
-  const rowH = 34;
-  const top = v.total && v.rows.length === 1 ? 34 : 6;
+  const rowH = live ? 44 : 34;
+  const top = v.total && v.rows.length === 1 ? (live ? 54 : 34) : 6;
   const h = top + v.rows.length * (rowH + 10) + 2;
   const svg = frame(h, 'מודל פסים');
+  const boxes: BarDraw['boxes'] = new Map();
   const right = W - nameW - 2;
   let widest = 0;
   v.rows.forEach((r, i) => {
@@ -82,41 +143,116 @@ function bar(v: Extract<Visual, { kind: 'bar' }>): SVGSVGElement {
     r.segs.forEach((s, j) => {
       const w = Math.max(minW(s), s.v * scale);
       x -= w;
-      svg.append(
-        svgEl('rect', {
-          x: x + 1,
-          y,
-          width: w - 2,
-          height: rowH,
-          rx: 7,
-          fill: s.gap ? '#fff' : s.label === '?' ? '#fff' : BAR_FILLS[j % BAR_FILLS.length],
-          stroke: s.label === '?' ? C.pink : C.purple,
-          'stroke-width': 2,
-          'stroke-dasharray': s.gap || s.label === '?' ? '5 4' : '',
-        }),
-        label(x + w / 2, y + rowH / 2, s.label),
-      );
+      const open = s.gap || s.label === '?';
+      const g = svgEl('g', { class: 'bar-box' });
+      const rect = svgEl('rect', {
+        x: x + 1,
+        y,
+        width: w - 2,
+        height: rowH,
+        rx: 7,
+        fill: open ? '#fff' : BAR_FILLS[j % BAR_FILLS.length],
+        stroke: s.label === '?' ? C.pink : C.purple,
+        'stroke-width': 2,
+        'stroke-dasharray': open ? '5 4' : '',
+      });
+      const text = label(x + w / 2, y + rowH / 2, s.label);
+      g.append(rect, text);
+      svg.append(g);
+      boxes.set(`${i}:${j}`, { g, rect, text });
     });
     widest = Math.max(widest, right - x);
   });
   if (v.total) {
     const lab = v.total.label;
+    const g = svgEl('g', { class: 'bar-box' });
+    let rect: SVGRectElement;
+    let text: SVGTextElement;
     if (v.rows.length === 1) {
       const x0 = right - widest;
-      svg.append(
-        svgEl('path', { d: `M${x0 + 2},26 v-6 h${widest - 4} v6`, fill: 'none', stroke: C.ink, 'stroke-width': 2 }),
-        label(x0 + widest / 2, 10, lab),
-      );
+      const by = top - 8;
+      const bw = Math.max(54, textW(lab) + 10);
+      const bh = live ? 34 : 22;
+      const lift = live ? 11 : 6;
+      rect = svgEl('rect', { x: x0 + widest / 2 - bw / 2, y: by - lift - bh, width: bw, height: bh, rx: 8, fill: 'transparent', stroke: 'none' });
+      text = label(x0 + widest / 2, by - lift - bh / 2, lab);
+      svg.append(svgEl('path', { d: `M${x0 + 2},${by} v-6 h${widest - 4} v6`, fill: 'none', stroke: C.ink, 'stroke-width': 2 }));
     } else {
       const x0 = right - widest - 8;
       const y1 = top + v.rows.length * (rowH + 10) - 10;
-      svg.append(
-        svgEl('path', { d: `M${x0 + 6},${top} h-6 V${y1} h6`, fill: 'none', stroke: C.ink, 'stroke-width': 2 }),
-        label(x0 - 14, (top + y1) / 2, lab),
-      );
+      rect = svgEl('rect', { x: x0 - 30, y: (top + y1) / 2 - 17, width: 32, height: 34, rx: 8, fill: 'transparent', stroke: 'none' });
+      text = label(x0 - 14, (top + y1) / 2, lab);
+      svg.append(svgEl('path', { d: `M${x0 + 6},${top} h-6 V${y1} h6`, fill: 'none', stroke: C.ink, 'stroke-width': 2 }));
     }
+    g.append(rect, text);
+    svg.append(g);
+    boxes.set('T', { g, rect, text });
   }
-  return svg;
+  return { svg, boxes };
+}
+
+/** Tap a chip, then the box it belongs in. Right: it locks in green. Wrong: the box wiggles. '?' boxes take nothing. */
+function barLive(v: Of<'bar'>, keep: VisKeep): HTMLElement {
+  const slots = barSlots(v);
+  const chips = barChips(v);
+  keep.bar ??= barStart(v);
+  const box = liveBox('bar-live');
+  const tip = html('p', 'vis-tip');
+  const { svg, boxes } = barDraw(v, true);
+  const tray = html('div', 'chips');
+  const msg = html('p', 'vis-msg');
+  const chipBtns = chips.map((_, i) =>
+    btn('chip', '', () => {
+      keep.bar = barSelect(keep.bar!, i);
+      paint();
+    }),
+  );
+  chipBtns.forEach((b, i) => b.append(Object.assign(html('bdi'), { textContent: chips[i] })));
+  tray.append(...chipBtns);
+  const keyToSlot = new Map(slots.map((s, k) => [s.key, k]));
+  for (const [key, b] of boxes) {
+    const isQ = b.text.textContent === '?';
+    const slot = keyToSlot.get(key);
+    if (slot === undefined && !isQ) continue;
+    b.g.classList.add(isQ ? 'bar-q' : 'bar-slot');
+    b.g.addEventListener('click', () => {
+      const s = keep.bar!;
+      if (s.sel === null) {
+        if (slot !== undefined && !s.placed[slot]) replay(tray, 'nudge');
+        return;
+      }
+      const res = barDrop(v, s, slot ?? -1);
+      if (res.ok) {
+        keep.bar = res.s;
+        msg.textContent = '';
+      } else {
+        replay(b.g, 'wiggle');
+        msg.textContent = isQ ? BAR_NOT_HERE : '';
+      }
+      paint();
+    });
+  }
+  const paint = () => {
+    const s = keep.bar!;
+    const sc = barScene(v, s);
+    for (const [key, b] of boxes) {
+      const k = keyToSlot.get(key);
+      if (k === undefined) continue;
+      b.text.textContent = sc.labels.get(key) ?? '';
+      b.g.classList.toggle('placed', s.placed[k]);
+      b.g.classList.toggle('empty', !s.placed[k]);
+      b.g.classList.toggle('ready', s.sel !== null && !s.placed[k]);
+    }
+    chipBtns.forEach((c, i) => {
+      c.hidden = s.used[i];
+      c.classList.toggle('on', s.sel === i);
+    });
+    tip.textContent = sc.texts[sc.texts.length - 1];
+    tip.classList.toggle('done', sc.done);
+  };
+  paint();
+  box.append(tip, svg, tray, msg);
+  return box;
 }
 
 // ---------- number line (left to right) ----------
@@ -143,34 +279,34 @@ function spread(values: number[], x0: number, x1: number, minGap: number): (v: n
   return (v) => xs.get(v)! + shift;
 }
 
-function line(v: Extract<Visual, { kind: 'line' }>): SVGSVGElement {
-  const pos = spread(v.points.map((p) => p.v), 30, W - 30, 54);
+function lineGeom(v: Of<'line'>) {
+  const n = new Set(v.points.map((p) => p.v)).size;
+  const minGap = Math.min(54, (W - 60) / Math.max(1, n - 1));
+  const pos = spread(v.points.map((p) => p.v), 30, W - 30, minGap);
   const spans = v.jumps.map((_, i) => Math.abs(pos(v.points[i + 1].v) - pos(v.points[i].v)));
   const arcH = spans.map((s) => Math.min(56, 18 + s * 0.2));
-  const top = Math.max(...arcH, 18) + 26;
-  const y = top;
-  const svg = frame(y + 34, 'ציר מספרים');
+  const y = Math.max(...arcH, 18) + 26;
+  return { pos, arcH, y, h: y + 34, size: minGap < 44 ? 13 : 15 };
+}
+
+/** The static line (the inequality's "=" point with an arrow to where the answers are). */
+function line(v: Of<'line'>): SVGSVGElement {
+  const { pos, arcH, y, h, size } = lineGeom(v);
+  const svg = frame(h, 'ציר מספרים');
   svg.append(svgEl('line', { x1: 6, y1: y, x2: W - 6, y2: y, stroke: C.ink, 'stroke-width': 2.5, 'stroke-linecap': 'round' }));
   v.jumps.forEach((j, i) => {
     const a = pos(v.points[i].v);
     const b = pos(v.points[i + 1].v);
-    const hgt = arcH[i];
     const mid = (a + b) / 2;
     svg.append(
-      svgEl('path', {
-        d: `M${a},${y - 4} Q${mid},${y - 2 * hgt} ${b},${y - 4}`,
-        fill: 'none',
-        stroke: C.purple,
-        'stroke-width': 2.5,
-        'marker-end': 'url(#v-arrow)',
-      }),
-      label(mid, y - hgt - 12, j, { color: j === '?' ? C.pink : C.purple }),
+      svgEl('path', { d: `M${a},${y - 4} Q${mid},${y - 2 * arcH[i]} ${b},${y - 4}`, fill: 'none', stroke: C.purple, 'stroke-width': 2.5, 'marker-end': 'url(#v-arrow)' }),
+      label(mid, y - arcH[i] - 12, j, { color: j === '?' ? C.pink : C.purple, size }),
     );
   });
   for (const p of v.points) {
     const x = pos(p.v);
     svg.append(svgEl('circle', { cx: x, cy: y, r: p.label === '?' ? 6 : 5, fill: p.label === '?' ? C.pink : C.ink }));
-    if (p.label) svg.append(label(x, y + 18, p.label));
+    if (p.label) svg.append(label(x, y + 18, p.label, { size }));
   }
   if (v.answers) {
     const eq = v.points.find((p) => p.label === '=');
@@ -187,28 +323,98 @@ function line(v: Extract<Visual, { kind: 'line' }>): SVGSVGElement {
   return svg;
 }
 
+/** She makes each hop with a button; the arc draws itself and the landing point appears ('?' stays '?'). */
+function lineLive(v: Of<'line'>, keep: VisKeep): HTMLElement {
+  keep.hops ??= 0;
+  const { pos, arcH, y, h, size } = lineGeom(v);
+  const box = liveBox('line-live');
+  const svg = frame(h, 'ציר מספרים');
+  svg.append(svgEl('line', { x1: 6, y1: y, x2: W - 6, y2: y, stroke: C.ink, 'stroke-width': 2.5, 'stroke-linecap': 'round' }));
+  const first = lineScene(v, keep.hops);
+  const arcs = v.jumps.map((j, i) => {
+    const a = pos(v.points[i].v);
+    const b = pos(v.points[i + 1].v);
+    const mid = (a + b) / 2;
+    const cy = y - 2 * arcH[i];
+    // arrowhead along the curve's end tangent (control point → end)
+    const ang = (Math.atan2(y - 4 - cy, b - mid) * 180) / Math.PI;
+    const g = svgEl('g', { class: `hop${first.arcs[i] ? ' on' : ''}` });
+    g.append(
+      svgEl('path', { d: `M${a},${y - 4} Q${mid},${cy} ${b},${y - 4}`, pathLength: 1, class: 'hop-arc', fill: 'none', stroke: C.purple, 'stroke-width': 2.5 }),
+      svgEl('path', { d: 'M-9,-5 L0,0 L-9,5 z', class: 'hop-head', fill: C.purple, transform: `translate(${b},${y - 4}) rotate(${ang.toFixed(1)})` }),
+      label(mid, y - arcH[i] - 12, j, { color: j === '?' ? C.pink : C.purple, size }),
+    );
+    return g;
+  });
+  const pts = v.points.map((p, i) => {
+    const x = pos(p.v);
+    const g = svgEl('g', { class: `hop-pt${first.shown[i] ? ' on' : ''}` });
+    g.append(svgEl('circle', { cx: x, cy: y, r: p.label === '?' ? 6 : 5, fill: p.label === '?' ? C.pink : C.ink }));
+    if (p.label) g.append(label(x, y + 18, p.label, { size }));
+    return g;
+  });
+  svg.append(...arcs, ...pts);
+  const row = html('div', 'vis-row');
+  const go = btn('vis-btn', '', () => {
+    keep.hops = Math.min(keep.hops! + 1, v.jumps.length);
+    paint();
+  });
+  const again = btn('vis-btn ghost', LINE_AGAIN, () => {
+    keep.hops = 0;
+    paint();
+  });
+  const msg = html('p', 'vis-msg');
+  row.append(go, again);
+  const paint = () => {
+    const sc = lineScene(v, keep.hops!);
+    arcs.forEach((g, i) => g.classList.toggle('on', sc.arcs[i]));
+    pts.forEach((g, i) => g.classList.toggle('on', sc.shown[i]));
+    go.replaceChildren(...richText(sc.button));
+    go.hidden = !sc.button;
+    again.hidden = Boolean(sc.button);
+    msg.textContent = sc.msg;
+  };
+  paint();
+  box.append(svg, row, msg);
+  return box;
+}
+
+/** Text with L(...) isolates as <bdi> runs (buttons mix Hebrew and numbers). */
+function richText(s: string): Node[] {
+  return s.split(/(⁦[^⁩]*⁩)/).filter(Boolean).map((part) =>
+    part.startsWith('⁦') ? Object.assign(html('bdi'), { textContent: part.slice(1, -1), dir: 'ltr' }) : document.createTextNode(part),
+  );
+}
+
 // ---------- sequence chain ----------
 
-function chain(v: Extract<Visual, { kind: 'chain' }>): SVGSVGElement {
+function chainDraw(v: Of<'chain'>) {
   const n = v.items.length;
   const gap = 8;
   const bw = Math.min(46, (W - 8 - gap * (n - 1)) / n);
   const x0 = (W - (n * bw + (n - 1) * gap)) / 2;
   const cx = (i: number) => x0 + i * (bw + gap) + bw / 2;
-  const hasBelow = v.arcs.some((a) => a.below);
-  const by = 46;
-  const svg = frame(by + 36 + (hasBelow ? 44 : 6), 'סדרה');
-  for (const a of v.arcs) {
+  const hgt = (a: { from: number; to: number }) => (a.to - a.from) * 12 + 12;
+  const up = Math.max(0, ...v.arcs.filter((a) => !a.below).map(hgt));
+  const down = Math.max(0, ...v.arcs.filter((a) => a.below).map(hgt));
+  const by = up + 30;
+  const svg = frame(by + 36 + (down ? down + 30 : 6), 'סדרה');
+  const badges = v.arcs.map((a) => {
     const x1 = cx(a.from);
     const x2 = cx(a.to);
-    const hgt = (a.to - a.from) * 12 + 10;
     const yy = a.below ? by + 36 : by;
-    const d = a.below ? `M${x1},${yy + 2} Q${(x1 + x2) / 2},${yy + 2 * hgt} ${x2},${yy + 2}` : `M${x1},${yy - 2} Q${(x1 + x2) / 2},${yy - 2 * hgt} ${x2},${yy - 2}`;
-    svg.append(
-      svgEl('path', { d, fill: 'none', stroke: a.below ? C.teal : C.purple, 'stroke-width': 2.2, 'marker-end': 'url(#v-arrow)' }),
-      label((x1 + x2) / 2, a.below ? yy + hgt + 10 : yy - hgt - 10, a.label, { size: 15 }),
-    );
-  }
+    const hh = hgt(a);
+    const d = a.below ? `M${x1},${yy + 2} Q${(x1 + x2) / 2},${yy + 2 * hh} ${x2},${yy + 2}` : `M${x1},${yy - 2} Q${(x1 + x2) / 2},${yy - 2 * hh} ${x2},${yy - 2}`;
+    svg.append(svgEl('path', { d, fill: 'none', stroke: a.below ? C.teal : C.purple, 'stroke-width': 2.2, 'marker-end': 'url(#v-arrow)' }));
+    const ly = a.below ? yy + hh + 12 : yy - hh - 12;
+    const g = svgEl('g', { class: 'arc-badge' });
+    const pill = svgEl('rect', { x: (x1 + x2) / 2 - 17, y: ly - 13, width: 34, height: 26, rx: 13, class: 'arc-pill' });
+    const hit = svgEl('circle', { cx: (x1 + x2) / 2, cy: ly, r: 22, fill: 'transparent' });
+    const text = label((x1 + x2) / 2, ly, a.label, { size: 15 });
+    g.append(pill, text, hit);
+    svg.append(g);
+    return { g, pill, text, x: (x1 + x2) / 2 };
+  });
   v.items.forEach((it, i) => {
     const x = cx(i) - bw / 2;
     svg.append(
@@ -216,14 +422,75 @@ function chain(v: Extract<Visual, { kind: 'chain' }>): SVGSVGElement {
       label(cx(i), by + 18, it, { size: it.length > 2 ? 13 : 15 }),
     );
   });
-  return svg;
+  return { svg, badges };
+}
+
+/** Tap an arrow's '?', type its jump. Right: green. Wrong: wiggle (twice wrong: it is shown, it's never the answer). */
+function chainLive(v: Of<'chain'>, keep: VisKeep): HTMLElement {
+  keep.chain ??= chainStart(v);
+  const asking = v.arcs.some((a) => a.jump !== undefined);
+  const box = liveBox('chain-live', asking ? CHAIN_PICK : undefined);
+  const { svg, badges } = chainDraw(v);
+  const editor = html('div', 'chain-edit');
+  badges.forEach((b, i) => {
+    if (v.arcs[i].jump === undefined) return;
+    b.g.classList.add('tap');
+    b.g.addEventListener('click', () => {
+      keep.chain = chainOpen(v, keep.chain!, i);
+      paint();
+      editor.querySelector('input')?.focus();
+    });
+  });
+  const paint = (wrongNow = false) => {
+    const s = keep.chain!;
+    const sc = chainScene(v, s);
+    badges.forEach((b, i) => {
+      b.text.textContent = sc.labels[i];
+      b.text.setAttribute('fill', sc.labels[i] === '?' ? C.pink : C.ink);
+      b.pill.setAttribute('width', String(Math.max(34, textW(sc.labels[i], 15))));
+      b.pill.setAttribute('x', String(b.x - Math.max(34, textW(sc.labels[i], 15)) / 2));
+      b.g.classList.toggle('done', s.got[i] === 'done');
+      b.g.classList.toggle('given', s.got[i] === 'given');
+      b.g.classList.toggle('open', s.open === i);
+    });
+    editor.replaceChildren();
+    if (s.open === null) return;
+    const [before, after] = chainQuestion(v, v.arcs[s.open]).split('⬜');
+    const row = html('div', 'h-step');
+    const expr = html('div', 'h-expr');
+    expr.dir = 'ltr';
+    const input = html('input', 'h-input');
+    input.inputMode = 'numeric';
+    input.pattern = '[0-9]*';
+    input.maxLength = 3;
+    input.setAttribute('aria-label', 'הקפיצה');
+    input.addEventListener('input', () => (input.value = input.value.replace(/\D/g, '')));
+    const go = () => {
+      if (!input.value) return;
+      const res = chainTry(v, keep.chain!, Number(input.value));
+      keep.chain = res.s;
+      paint(!res.ok && res.s.open !== null);
+    };
+    input.addEventListener('keydown', (e) => e.key === 'Enter' && go());
+    expr.append(before.trim(), input, after.trim());
+    row.append(expr, btn('h-ok', '✓', go));
+    if (wrongNow) {
+      row.append(html('span', 'h-try', 'נסי שוב 🙂'));
+      replay(row, 'shake');
+    }
+    editor.append(row);
+    if (wrongNow) input.focus();
+  };
+  paint();
+  box.append(svg, editor);
+  return box;
 }
 
 // ---------- groups of dots ----------
 
 const DOTS_MAX = 25;
 
-function dotGrid(svg: SVGSVGElement, cx: number, cy: number, n: number, cols: number, step: number, r: number, color: string): void {
+function dotGrid(svg: SVGElement, cx: number, cy: number, n: number, cols: number, step: number, r: number, color: string): void {
   const rows = Math.ceil(n / cols);
   for (let k = 0; k < n; k++) {
     const row = Math.floor(k / cols);
@@ -233,9 +500,10 @@ function dotGrid(svg: SVGSVGElement, cx: number, cy: number, n: number, cols: nu
   }
 }
 
-type Groups = Extract<Visual, { kind: 'groups' }>;
+type Groups = Of<'groups'>;
 
-function groups(v: Groups): SVGSVGElement {
+/** Groups with known counts. `lit`: she taps a group to light it up while counting (no running total). */
+function groups(v: Groups, keep?: VisKeep): Element {
   const perRow = Math.min(v.n, 5);
   const cell = W / perRow;
   const dots = v.per !== null && v.per <= DOTS_MAX && !v.inner;
@@ -259,20 +527,38 @@ function groups(v: Groups): SVGSVGElement {
     else svg.append(label(W / 2, y + 6, `${v.loose} ●`, { color: C.ink }));
     y += looseRows * 11 + 14;
   }
+  const live = keep && v.per !== null;
+  if (live) keep.lit ??= Array<boolean>(v.n).fill(false);
+  const cells: SVGGElement[] = [];
   for (let k = 0; k < v.n; k++) {
     const row = Math.floor(k / perRow);
     const inRow = row === rows - 1 ? v.n - row * perRow : perRow;
     const cx = W / 2 + ((k % perRow) - (inRow - 1) / 2) * cell;
     const cy = y + row * (2 * r + 8) + r + 4;
     const unknown = v.per === null;
-    svg.append(
-      svgEl('circle', { cx, cy, r, fill: unknown ? '#fff' : C.lilac, stroke: unknown ? C.pink : C.purple, 'stroke-width': 2, 'stroke-dasharray': unknown ? '5 4' : '' }),
+    const g = svgEl('g', { class: 'grp' });
+    g.append(
+      svgEl('circle', { cx, cy, r, class: 'grp-ring', fill: unknown ? '#fff' : C.lilac, stroke: unknown ? C.pink : C.purple, 'stroke-width': 2, 'stroke-dasharray': unknown ? '5 4' : '' }),
     );
-    if (dots) dotGrid(svg, cx, cy, v.per!, Math.min(cols, v.per!), step, step > 8 ? 3.6 : 3, C.ink);
-    else svg.append(label(cx, cy, unknown ? '?' : (v.inner ?? String(v.per)), { size: unknown ? 18 : 14 }));
+    if (dots) dotGrid(g, cx, cy, v.per!, Math.min(cols, v.per!), step, step > 8 ? 3.6 : 3, C.ink);
+    else g.append(label(cx, cy, unknown ? '?' : (v.inner ?? String(v.per)), { size: unknown ? 18 : 14 }));
+    svg.append(g);
+    cells.push(g);
   }
   if (v.total) svg.append(label(W / 2, h - 13, v.total === '?' ? 'בסך הכול: ?' : `בסך הכול: ${v.total}`, { size: 15, color: C.ink }));
-  return svg;
+  if (!live) return svg;
+  const box = liveBox('groups-live', GROUPS_TAP);
+  const paint = () => cells.forEach((g, k) => g.classList.toggle('lit', keep.lit![k]));
+  cells.forEach((g, k) => {
+    g.classList.add('tap');
+    g.addEventListener('click', () => {
+      keep.lit = litToggle(keep.lit!, k);
+      paint();
+    });
+  });
+  paint();
+  box.append(svg);
+  return box;
 }
 
 // ---------- dealing: tap to give every group one more dot (the per-group count is never written) ----------
@@ -394,75 +680,110 @@ function dealGroups(v: Groups, keep: { deal?: Deal }): HTMLElement {
   return box;
 }
 
-// ---------- clock ----------
+
+// ---------- clock: buttons move the hands ----------
 
 const polar = (cx: number, cy: number, r: number, deg: number): [number, number] => {
   const a = ((deg - 90) * Math.PI) / 180;
   return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
 };
 
-function arcPath(cx: number, cy: number, r: number, from: number, sweep: number): string {
-  const [x1, y1] = polar(cx, cy, r, from);
-  const [x2, y2] = polar(cx, cy, r, from + sweep);
-  return `M${x1.toFixed(1)},${y1.toFixed(1)} A${r},${r} 0 ${sweep > 180 ? 1 : 0} 1 ${x2.toFixed(1)},${y2.toFixed(1)}`;
-}
-
-function face(svg: SVGSVGElement, cx: number, cy: number, r: number, t: number): void {
+function dial(svg: SVGSVGElement, cx: number, cy: number, r: number): void {
   svg.append(svgEl('circle', { cx, cy, r, fill: '#fff', stroke: C.purple, 'stroke-width': 3 }));
   for (let h = 1; h <= 12; h++) {
-    const [x, y] = polar(cx, cy, r - 12, h * 30);
-    svg.append(label(x, y, String(h), { size: 11, weight: 700 }));
+    const [x, y] = polar(cx, cy, r - 13, h * 30);
+    svg.append(label(x, y, String(h), { size: 13, weight: 700 }));
   }
-  for (let k = 0; k < 60; k += 5) {
+  for (let k = 0; k < 60; k++) {
+    const big = k % 5 === 0;
     const [x1, y1] = polar(cx, cy, r - 2, k * 6);
-    const [x2, y2] = polar(cx, cy, r - 5, k * 6);
-    svg.append(svgEl('line', { x1, y1, x2, y2, stroke: C.purple, 'stroke-width': 1.5 }));
+    const [x2, y2] = polar(cx, cy, r - (big ? 6 : 4), k * 6);
+    svg.append(svgEl('line', { x1, y1, x2, y2, stroke: C.purple, 'stroke-width': big ? 1.8 : 0.8 }));
   }
-  const m = t % 60;
-  const h = Math.floor(t / 60) % 12;
-  const [hx, hy] = polar(cx, cy, r * 0.48, (h + m / 60) * 30);
-  const [mx, my] = polar(cx, cy, r * 0.75, m * 6);
-  svg.append(
-    svgEl('line', { x1: cx, y1: cy, x2: hx, y2: hy, stroke: C.ink, 'stroke-width': 4.5, 'stroke-linecap': 'round' }),
-    svgEl('line', { x1: cx, y1: cy, x2: mx, y2: my, stroke: C.pink, 'stroke-width': 3, 'stroke-linecap': 'round' }),
-    svgEl('circle', { cx, cy, r: 3.5, fill: C.ink }),
-  );
 }
 
-function clockFaces(v: Extract<Visual, { kind: 'clock' }>): SVGSVGElement {
-  const n = v.faces.length;
-  const arcs = v.arcs ?? [];
-  const r = n > 1 ? 50 : 54;
-  const pad = arcs.length ? 12 + arcs.length * 8 : 4;
-  const cy = r + pad + 4;
-  const h = cy + r + pad + 26;
+/** Hand angles that keep growing (no wrap), so a transition always turns the hands forward. */
+const handDeg = (t: number) => ({ hour: t * 0.5, minute: t * 6 });
+
+/** A pie for one press: a full disc for an hour, a slice for less. Countable, like dots; no number. */
+function pie(cx: number, cy: number, r: number, m: number): SVGElement {
+  if (m >= 60) return svgEl('circle', { cx, cy, r, fill: C.teal });
+  const [x, y] = polar(cx, cy, r, m * 6);
+  return svgEl('path', { d: `M${cx},${cy} V${cy - r} A${r},${r} 0 ${m > 30 ? 1 : 0} 1 ${x.toFixed(1)},${y.toFixed(1)} z`, fill: C.teal });
+}
+
+function clockLive(v: Of<'clock'>, keep: VisKeep): HTMLElement {
+  keep.clock ??= [];
+  const r = 70;
+  const cx = W / 2;
+  const cy = r + 6;
+  const h = cy + r + 8;
+  const box = liveBox('clock-live');
   const svg = frame(h, 'שעון');
-  v.faces.forEach((f, i) => {
-    const cx = n === 1 ? (arcs.length ? 110 : W / 2) : (W / (n + 1)) * (n - i);
-    face(svg, cx, cy, r, f.t);
-    svg.append(label(cx, h - 12, f.caption, { size: 15 }));
-  });
-  const cx = n === 1 ? (arcs.length ? 110 : W / 2) : (W / (n + 1)) * n;
-  const colors = [C.teal, C.gold, C.purple];
-  arcs.forEach((a, i) => {
-    const ring = r + 7 + i * 8;
-    const start = a.ring === 'minute' ? (a.from % 60) * 6 : ((Math.floor(a.from / 60) % 12) + (a.from % 60) / 60) * 30;
-    const sweep = Math.min(a.ring === 'minute' ? a.min * 6 : a.min / 2, 359);
+  dial(svg, cx, cy, r);
+  const hand = (len: number, width: number, color: string, extra: Attrs = {}) =>
+    svgEl('line', { x1: cx, y1: cy, x2: cx, y2: cy - len, stroke: color, 'stroke-width': width, 'stroke-linecap': 'round', ...extra });
+  if (v.target) {
+    const d = handDeg(v.target.t);
+    const ghost = { 'stroke-dasharray': '5 5', opacity: 0.55 };
     svg.append(
-      svgEl('path', { d: arcPath(cx, cy, ring, start, sweep), fill: 'none', stroke: colors[i], 'stroke-width': 5, 'stroke-linecap': 'round', opacity: 0.85 }),
+      hand(r * 0.48, 4.5, C.ink, { ...ghost, transform: `rotate(${d.hour % 360} ${cx} ${cy})` }),
+      hand(r * 0.76, 3, C.pink, { ...ghost, transform: `rotate(${d.minute % 360} ${cx} ${cy})` }),
     );
-    const ly = cy - (arcs.length - 1) * 14 + i * 28;
-    svg.append(
-      svgEl('rect', { x: W - 22, y: ly - 4, width: 18, height: 8, rx: 4, fill: colors[i] }),
-      label(W - 28, ly, a.label, { anchor: 'end', size: 15 }),
-    );
+  }
+  const hourHand = hand(r * 0.48, 5.5, C.ink, { class: 'clock-hand' });
+  const minHand = hand(r * 0.76, 3.5, C.pink, { class: 'clock-hand' });
+  for (const hh of [hourHand, minHand]) hh.style.transformOrigin = `${cx}px ${cy}px`;
+  svg.append(hourHand, minHand, svgEl('circle', { cx, cy, r: 4, fill: C.ink }));
+  const tokens = html('div', 'clock-tokens');
+
+  const caps = html('div', 'clock-caps');
+  caps.append(html('span', 'clock-cap', v.caption));
+  if (v.target) caps.append(html('span', 'clock-cap ghost', v.target.caption));
+  const row = html('div', 'vis-row');
+  const adds = v.adds.map((m) =>
+    btn('vis-btn', '', () => {
+      keep.clock = clockPress(keep.clock!, m);
+      paint();
+    }),
+  );
+  const reset = btn('vis-btn ghost', CLOCK_RESET, () => {
+    keep.clock = [];
+    svg.classList.add('instant');
+    paint();
+    void svg.getBoundingClientRect();
+    svg.classList.remove('instant');
   });
-  return svg;
+  const msg = html('p', 'vis-msg');
+  row.append(...adds, reset);
+  const paint = () => {
+    const sc = clockScene(v, keep.clock!);
+    const d = handDeg(sc.at);
+    hourHand.style.transform = `rotate(${d.hour}deg)`;
+    minHand.style.transform = `rotate(${d.minute}deg)`;
+    sc.buttons.forEach((b, i) => {
+      adds[i].replaceChildren(...richText(b.label));
+      adds[i].disabled = b.off;
+    });
+    reset.disabled = !keep.clock!.length;
+    msg.replaceChildren(...richText(sc.msg));
+    msg.classList.toggle('match', v.target !== undefined && sc.at === v.target.t);
+    tokens.replaceChildren(
+      ...(v.target ? keep.clock! : []).map((m) => {
+        const t = svgEl('svg', { viewBox: '0 0 22 22', width: 22, height: 22, class: 'token' });
+        t.append(svgEl('circle', { cx: 11, cy: 11, r: 9, fill: '#fff', stroke: C.teal, 'stroke-width': 1.5 }), pie(11, 11, 9, m));
+        return t;
+      }),
+    );
+  };
+  paint();
+  box.append(svg, ...(v.target ? [tokens] : []), caps, row, msg);
+  return box;
 }
 
-// ---------- column addition ----------
+// ---------- column addition: she tries digits for ☀ ----------
 
-function column(v: Extract<Visual, { kind: 'column' }>): SVGSVGElement {
+function column(v: Of<'column'>): SVGSVGElement {
   const cw = 34;
   const rowH = 40;
   const cols = Math.max(...[v.top, v.add, v.result].map((s) => [...s].length));
@@ -479,12 +800,39 @@ function column(v: Extract<Visual, { kind: 'column' }>): SVGSVGElement {
   return svg;
 }
 
-/** `keep` carries interactive state (the deal) across re-renders of the same hint. */
-export function renderVisual(v: Visual, keep: { deal?: Deal } = {}): Element {
-  if (v.kind === 'bar') return bar(v);
-  if (v.kind === 'line') return line(v);
-  if (v.kind === 'chain') return chain(v);
-  if (v.kind === 'groups') return v.per === null && v.loose ? dealGroups(v, keep) : groups(v);
-  if (v.kind === 'clock') return clockFaces(v);
-  return column(v);
+/** Digit chips 1–9: the chosen one shows the ones column with it ("6 + 4 = 10"). No ✓/✗: she compares herself. */
+function columnLive(v: Of<'column'>, keep: VisKeep): HTMLElement {
+  keep.pick ??= null;
+  const box = liveBox('digit-live', DIGIT_PICK);
+  const tray = html('div', 'chips digits');
+  tray.dir = 'ltr';
+  const out = html('p', 'digit-line');
+  out.dir = 'ltr';
+  const chips = DIGITS.map((d) =>
+    btn('chip', String(d), () => {
+      keep.pick = keep.pick === d ? null : d;
+      paint();
+    }),
+  );
+  tray.append(...chips);
+  const paint = () => {
+    const sc = digitScene(v, keep.pick!);
+    chips.forEach((c, i) => c.classList.toggle('on', keep.pick === DIGITS[i]));
+    out.textContent = sc.line;
+    out.classList.toggle('empty', !sc.line);
+    if (sc.line) replay(out, 'pop-in');
+  };
+  paint();
+  box.append(column(v), tray, out);
+  return box;
+}
+
+/** `keep` carries interactive state across re-renders of the same hint (pass none for a fresh drawing). */
+export function renderVisual(v: Visual, keep: VisKeep = {}): Element {
+  if (v.kind === 'bar') return barSlots(v).length ? barLive(v, keep) : barDraw(v, false).svg;
+  if (v.kind === 'line') return v.jumps.length && !v.answers ? lineLive(v, keep) : line(v);
+  if (v.kind === 'chain') return chainLive(v, keep);
+  if (v.kind === 'groups') return v.per === null && v.loose ? dealGroups(v, keep) : groups(v, keep);
+  if (v.kind === 'clock') return clockLive(v, keep);
+  return columnLive(v, keep);
 }

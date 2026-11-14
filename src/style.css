@@ -1290,7 +1290,8 @@ mark.hl {
 /* ---------- hint drawings: no selection, no caret, no tap flash ---------- */
 
 .visual,
-.deal {
+.deal,
+.vis {
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
@@ -1368,9 +1369,293 @@ mark.hl {
   fill: var(--ink);
 }
 
+/* ---------- drawings she works with her finger ---------- */
+
+.vis {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.vis-tip {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--purple);
+  text-align: center;
+}
+
+.vis-tip.done {
+  color: var(--teal);
+}
+
+.vis-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.vis-btn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 14px;
+  border-radius: 22px;
+  background: var(--purple);
+  color: #fff;
+  font-size: 17px;
+  font-weight: 800;
+  box-shadow: 0 3px 0 #6b3fd0;
+  touch-action: manipulation;
+}
+
+.vis-btn:active:not(:disabled) {
+  translate: 0 2px;
+  box-shadow: 0 1px 0 #6b3fd0;
+}
+
+.vis-btn.ghost {
+  background: #fff;
+  color: var(--purple);
+  border: 2px solid var(--purple);
+  box-shadow: none;
+}
+
+.vis-btn:disabled {
+  opacity: 0.4;
+}
+
+.vis-btn[hidden],
+.chip[hidden] {
+  display: none;
+}
+
+.vis-msg {
+  margin: 0;
+  min-height: 24px;
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--purple);
+  text-align: center;
+}
+
+.vis-msg.match {
+  color: var(--teal);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  max-width: 300px;
+}
+
+.chips.nudge {
+  animation: shake 0.4s;
+}
+
+.chip {
+  min-width: 48px;
+  min-height: 44px;
+  padding: 0 10px;
+  border-radius: 12px;
+  background: #fff;
+  border: 3px solid var(--gold);
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--ink);
+  touch-action: manipulation;
+}
+
+.chip.on {
+  background: var(--gold);
+  translate: 0 -3px;
+  box-shadow: 0 4px 0 #d9a514;
+}
+
+/* bar model: empty boxes wait for a chip */
+
+.bar-slot,
+.bar-q {
+  cursor: pointer;
+}
+
+.bar-slot.empty rect {
+  fill: #fff;
+  stroke-dasharray: 5 4;
+}
+
+.bar-slot.ready rect {
+  stroke: var(--gold);
+  stroke-width: 3;
+}
+
+.bar-slot.placed rect {
+  fill: #d8f7ef;
+  stroke: var(--teal);
+  stroke-width: 3;
+  stroke-dasharray: none;
+}
+
+.bar-slot.placed text {
+  animation: fade-in 0.3s;
+}
+
+.wiggle {
+  animation: shake 0.4s;
+}
+
+/* number line: hops draw themselves */
+
+.hop-arc {
+  stroke-dasharray: 1 2;
+  stroke-dashoffset: 1;
+  opacity: 0;
+  transition: stroke-dashoffset 0.5s ease-in-out, opacity 0s;
+}
+
+.hop.on .hop-arc {
+  stroke-dashoffset: 0;
+  opacity: 1;
+}
+
+.hop-head,
+.hop text,
+.hop-pt {
+  opacity: 0;
+  transition: opacity 0.2s 0.45s;
+}
+
+.hop.on .hop-head,
+.hop.on text,
+.hop-pt.on {
+  opacity: 1;
+}
+
+/* clock */
+
+.clock-hand {
+  transform-box: view-box;
+  transition: transform 0.6s ease-in-out;
+}
+
+.instant .clock-hand {
+  transition: none;
+}
+
+.clock-caps {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 16px;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.clock-cap.ghost {
+  color: #a07ef9;
+  border-bottom: 3px dashed #a07ef9;
+}
+
+.clock-tokens {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px;
+  max-width: 290px;
+  min-height: 22px;
+}
+
+/* sequence arrows */
+
+.arc-pill {
+  fill: #fff;
+  stroke: var(--pink);
+  stroke-width: 2;
+}
+
+.arc-badge.tap {
+  cursor: pointer;
+}
+
+.arc-badge.tap .arc-pill {
+  fill: #fff8db;
+  stroke: var(--gold);
+  stroke-width: 3;
+}
+
+.arc-badge.open .arc-pill {
+  fill: var(--gold);
+}
+
+.arc-badge.done .arc-pill {
+  fill: #d8f7ef;
+  stroke: var(--teal);
+}
+
+.arc-badge.given .arc-pill {
+  fill: #fff3c4;
+  stroke: var(--gold);
+}
+
+.chain-edit .h-step {
+  justify-content: center;
+}
+
+/* groups: lit while she counts */
+
+.grp.tap {
+  cursor: pointer;
+}
+
+.grp-ring {
+  transition: fill 0.2s, stroke 0.2s;
+}
+
+.grp.lit .grp-ring {
+  fill: #fff0bf;
+  stroke: var(--gold);
+  stroke-width: 4;
+}
+
+/* digit tries */
+
+.chips.digits {
+  max-width: 290px;
+}
+
+.digit-line {
+  margin: 0;
+  min-height: 36px;
+  font-size: 28px;
+  font-weight: 800;
+  direction: ltr;
+  unicode-bidi: isolate;
+  white-space: nowrap;
+}
+
+.digit-line.pop-in {
+  animation: fade-in 0.25s;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .deal-ring,
-  .deal-dot {
+  .deal-dot,
+  .hop-arc,
+  .hop-head,
+  .hop text,
+  .hop-pt,
+  .clock-hand,
+  .grp-ring {
     transition: none;
+  }
+
+  .wiggle,
+  .chips.nudge,
+  .bar-slot.placed text,
+  .digit-line.pop-in {
+    animation: none;
   }
 }

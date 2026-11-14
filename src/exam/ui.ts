@@ -4,7 +4,7 @@ import { bankQuestions } from './bank';
 import { printMockExam } from './print';
 import { saveExam, type ExamRecord } from '../log';
 import { openParentScreen } from '../parent';
-import type { Deal, Hint } from './hints';
+import type { Hint, VisKeep } from './hints';
 import { renderVisual } from './visual';
 
 const LETTERS = ['א', 'ב', 'ג', 'ד'];
@@ -15,7 +15,7 @@ const MATH_TOPICS: MathType[] = ['arith', 'missing', 'inequality', 'pictures', '
 
 type Section = { title: string; questions: Question[]; minutes: number };
 /** Practice hint progress for one question: rungs opened, steps solved, wrong tries on the current step. */
-type HintState = { level: number; solved: number; wrong: number; given: boolean[]; deal?: Deal };
+type HintState = VisKeep & { level: number; solved: number; wrong: number; given: boolean[] };
 type Run = {
   mode: 'exam' | 'practice';
   label: string;

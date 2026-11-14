@@ -14,19 +14,23 @@ export type Visual =
   | { kind: 'bar'; rows: BarRow[]; total?: Seg }
   /** Number line, left to right. jumps[i] labels the hop from points[i] to points[i+1] ('+3', '−5' or '?'). */
   | { kind: 'line'; points: LinePoint[]; jumps: string[]; answers?: 'bigger' | 'smaller' }
-  /** A row of boxes (a sequence) with arrows between pairs of boxes. */
-  | { kind: 'chain'; items: string[]; arcs: { from: number; to: number; label: string; below?: boolean }[] }
+  /**
+   * A row of boxes (a sequence) with arrows between pairs of boxes. `jump` (never drawn until she finds it) makes an
+   * arrow tappable: she types the jump. Arrows whose jump is the answer, or that touch the '?', have none.
+   */
+  | { kind: 'chain'; items: string[]; arcs: ChainArc[] }
   /** n circles, each with `per` dots, or `inner` text, or '?' when per is null. `loose` dots wait above to be shared. */
   | { kind: 'groups'; n: number; per: number | null; inner?: string; cap?: string; cols?: number; loose?: number; total?: string; note?: string }
   /**
-   * Analog clock faces (minutes since midnight). Arcs go on the first face: around the minute ring, or along the
-   * hour ring for long times. The end of an arc is never drawn as hands or a label.
+   * A clock she moves (minutes since midnight). Buttons add `adds` minutes each. `target` (dashed hands, only when
+   * the answer is a duration) is the end time from the question. `elapsed` shows how much time she added (only when
+   * the answer is a clock time, so the added time is not the answer). The hands' time is never written.
    */
-  | { kind: 'clock'; faces: { t: number; caption: string }[]; arcs?: ClockArc[] }
+  | { kind: 'clock'; start: number; caption: string; target?: { t: number; caption: string }; adds: number[]; elapsed: boolean }
   /** A vertical (column) addition with the ones column highlighted. */
   | { kind: 'column'; top: string; add: string; result: string };
 
-export type ClockArc = { from: number; min: number; label: string; ring: 'minute' | 'hour' };
+export type ChainArc = { from: number; to: number; label: string; below?: boolean; jump?: number };
 
 /** `lead` is shown before the blank expression and is not part of it (e.g. "🍎 ="). */
 export type HintStep = { text: string; answer: number; lead?: string };
@@ -58,7 +62,7 @@ export function hintTexts(h: Hint): string[] {
   if (v.kind === 'line') out.push(...v.points.map((p) => p.label), ...v.jumps);
   if (v.kind === 'chain') out.push(...v.items, ...v.arcs.map((a) => a.label));
   if (v.kind === 'groups') out.push(v.inner ?? '', v.cap ?? '', v.total ?? '', v.note ?? '', v.per !== null ? String(v.per) : '');
-  if (v.kind === 'clock') out.push(...v.faces.map((f) => f.caption), ...(v.arcs ?? []).map((a) => a.label));
+  if (v.kind === 'clock') out.push(v.caption, v.target?.caption ?? '');
   if (v.kind === 'column') out.push(v.top, v.add, v.result);
   return out;
 }
@@ -85,7 +89,8 @@ const signed = (d: number) => (d >= 0 ? `+${d}` : `−${-d}`);
 
 /**
  * Counting up from lo to hi via round tens (lo → next ten → hi's ten → hi), as a number line and as steps
- * (one per hop). A landing point equal to `avoid` is skipped so the drawing never shows the answer.
+ * (one per hop). A landing point equal to `avoid` is skipped so the drawing never shows the answer. The total jump
+ * is the answer, so hop sizes are labeled only when there are 2+ hops (each one is then smaller than the total).
  */
 export function countUp(lo: number, hi: number, avoid: (n: number) => boolean): { visual: Visual; steps: HintStep[] } {
   const marks = [lo];
@@ -93,18 +98,22 @@ export function countUp(lo: number, hi: number, avoid: (n: number) => boolean): 
   marks.push(hi);
   const hops = marks.slice(1).map((m, i) => ({ from: marks[i], to: m }));
   return {
-    visual: { kind: 'line', points: marks.map((v) => ({ v, label: String(v) })), jumps: hops.map(() => '?') },
+    visual: {
+      kind: 'line',
+      points: marks.map((v) => ({ v, label: String(v) })),
+      jumps: hops.map((h) => (hops.length > 1 && !avoid(h.to - h.from) ? `+${h.to - h.from}` : '?')),
+    },
     steps: hops.length > 1 ? hops.map((h) => ({ text: `${h.from} + ⬜ = ${h.to}`, answer: h.to - h.from })) : [],
   };
 }
 
-/** A number line through `start` with labeled hops; intermediate points get `mid` labels, the last point is '?'. */
-export function hopLine(start: number, hops: number[], showMid = true): Visual {
+/** A number line through `start` with labeled hops. She makes the hops; landing points are labeled, the last is '?'. */
+export function hopLine(start: number, hops: number[]): Visual {
   const points: LinePoint[] = [{ v: start, label: String(start) }];
   let at = start;
   hops.forEach((d, i) => {
     at += d;
-    points.push({ v: at, label: i === hops.length - 1 ? '?' : showMid ? String(at) : '' });
+    points.push({ v: at, label: i === hops.length - 1 ? '?' : String(at) });
   });
   return { kind: 'line', points, jumps: hops.map(signed) };
 }
@@ -160,6 +169,17 @@ export const startDeal = (total: number, k: number): Deal => ({ pile: total, gro
 
 /** The pile can't give every group one more dot. */
 export const dealDone = (s: Deal): boolean => s.pile < s.groups.length;
+
+/** Interactive state of a question's drawing, kept across re-renders of the ladder. */
+export type VisKeep = {
+  deal?: Deal;
+  clock?: number[];
+  hops?: number;
+  bar?: { used: boolean[]; placed: boolean[]; sel: number | null };
+  chain?: { open: number | null; got: ('done' | 'given' | null)[]; wrong: number };
+  pick?: number | null;
+  lit?: boolean[];
+};
 
 /** One tap: one dot from the pile into each group. */
 export function deal(s: Deal): Deal {

@@ -140,6 +140,12 @@ const open = (answer: number, accept: (n: number) => boolean = (n) => n === answ
 
 // ---------- T1 תרגילי חשבון ----------
 
+/** x → 100 in hops of 10. A landing point equal to the answer (100 − x) stays unlabeled. */
+function tensTo100(x: number): Hint['visual'] {
+  const points = Array.from({ length: (100 - x) / 10 + 1 }, (_, i) => x + 10 * i).map((v) => ({ v, label: v === 100 - x && v !== x ? '' : String(v) }));
+  return { kind: 'line', points, jumps: points.slice(1).map(() => '+10') };
+}
+
 function arith(r: Rng): Question {
   const kind = pick(r, ['add10', 'sub10', 'add2', 'sub2', 'mul', 'div', 'mul10', 'hundred', 'chain'] as const);
   const q = (line: string, answer: number, wrongs: Wrong[], explain: string, hint?: Hint): Question => {
@@ -198,13 +204,16 @@ function arith(r: Rng): Question {
     const m = a + tens;
     const ones = b % 10;
     const need = tenUp(m) - m;
-    const hint: Hint = { ask: `קודם מוסיפים את העשרות של ${L(b)}, אחר כך את האחדות.`, visual: hopLine(a, [tens], false) };
+    // no ones (47 + 30): hops of 10, and no word about ones
+    const hint: Hint = ones
+      ? { ask: `קודם מוסיפים את העשרות של ${L(b)}, ואחר כך את האחדות.` }
+      : { ask: `מוסיפים ${L(tens / 10)} עשרות: קפיצות של ${L(10)}.`, visual: hopLine(a, Array<number>(tens / 10).fill(10)) };
     if (ones && ones > need) {
-      hint.visual = hopLine(a, [tens, need, ones - need], false);
+      hint.visual = hopLine(a, [tens, need, ones - need]);
       hint.steps = [{ text: `${a} + ${tens} = ⬜`, answer: m }, { text: `${m} + ⬜ = ${m + need}`, answer: need }];
       hint.after = `עוברים דרך העשרת העגולה. נשאר להוסיף עוד ${L(ones - need)} 😉`;
     } else if (ones) {
-      hint.visual = hopLine(a, [tens, ones], false);
+      hint.visual = hopLine(a, [tens, ones]);
       hint.steps = [{ text: `${a} + ${tens} = ⬜`, answer: m }];
       hint.after = `עכשיו מוסיפים את האחדות: ${L(`+ ${ones}`)} 😉`;
     }
@@ -223,10 +232,16 @@ function arith(r: Rng): Question {
     const m = a - tens;
     const ones = b % 10;
     const borrow = ones > m % 10 && m % 10 > 0;
-    const hint: Hint = { ask: `קודם מורידים את העשרות של ${L(b)}, אחר כך את האחדות.`, visual: hopLine(a, ones ? [-tens, -ones] : [-tens], false) };
+    // no ones (77 − 30): hops of 10 back, and no word about ones (one long hop if 10 is the answer or there are many)
+    const tensHops = !ones && tens <= 40 && ans !== 10;
+    const hint: Hint = ones
+      ? { ask: `קודם מורידים את העשרות של ${L(b)}, ואחר כך את האחדות.`, visual: hopLine(a, [-tens, -ones]) }
+      : tensHops
+        ? { ask: `מורידים ${L(tens / 10)} עשרות: קפיצות של ${L(10)} אחורה.`, visual: hopLine(a, Array<number>(tens / 10).fill(-10)) }
+        : { ask: `מורידים ${L(tens / 10)} עשרות.`, visual: hopLine(a, [-tens]) };
     if (ones) hint.steps = [{ text: `${a} − ${tens} = ⬜`, answer: m }];
     if (borrow) {
-      hint.visual = hopLine(a, [-tens, -(m % 10), -(ones - m % 10)], false);
+      hint.visual = hopLine(a, [-tens, -(m % 10), -(ones - m % 10)]);
       hint.steps!.push({ text: `${m} − ⬜ = ${m - (m % 10)}`, answer: m % 10 });
       hint.after = `יורדים דרך העשרת העגולה. נשאר להוריד עוד ${L(ones - (m % 10))} 😉`;
     } else if (ones) hint.after = `עכשיו מורידים את האחדות: ${L(`− ${ones}`)} 😉`;
@@ -253,13 +268,14 @@ function arith(r: Rng): Question {
     const hint: Hint = x % 10
       ? {
           ask: `כמה חסר מ־${L(x)} עד ${L(100)}? קופצים קודם לעשרת הבאה, ואז ל־${L(100)}.`,
-          visual: { kind: 'line', points: [{ v: x, label: String(x) }, { v: x + up, label: String(x + up) }, { v: 100, label: '100' }], jumps: [`+${up}`, '?'] },
+          // each hop is smaller than the total (the answer), so both sizes can show once she hops
+          visual: { kind: 'line', points: [{ v: x, label: String(x) }, { v: x + up, label: String(x + up) }, { v: 100, label: '100' }], jumps: [`+${up}`, `+${100 - x - up}`] },
           steps: [{ text: `${x} + ⬜ = ${x + up}`, answer: up }, { text: `${x + up} + ⬜ = 100`, answer: 100 - x - up }],
           after: 'עכשיו חברי את שתי הקפיצות 😉',
         }
       : {
-          ask: `כמה עשרות חסרות מ־${L(x)} עד ${L(100)}?`,
-          visual: { kind: 'line', points: [{ v: x, label: String(x) }, { v: 100, label: '100' }], jumps: ['?'] },
+          ask: `קופצים בקפיצות של ${L(10)}, מ־${L(x)} עד ${L(100)}. כמה קפיצות עשית?`,
+          visual: tensTo100(x),
         };
     return q(`100 − ${x}`, ans, [[slip, TRAP.digits], ans + 10, ans - 1, ans + 1], explain, hint);
   }
@@ -655,7 +671,7 @@ function word(r: Rng): Question {
       {
         ask: `קודם: בת כמה האחות היום? אחר כך: מה קורה בעוד ${L(y)} שנים?`,
         highlight: ['גדולה', 'בעוד'],
-        visual: hopLine(a, [d, y], false),
+        visual: hopLine(a, [d, y]),
         steps: [{ text: `${a} + ${d} = ⬜`, answer: a + d }],
         after: `ועכשיו עוד ${L(y)} שנים 😉`,
       },
@@ -691,7 +707,7 @@ function word(r: Rng): Question {
       {
         ask: `${g(p, 'נתן', 'נתנה')}: יש פחות. ${g(p, 'קיבל', 'קיבלה')}: יש יותר. עושים לפי הסדר.`,
         highlight: [g(p, 'הוא נתן', 'היא נתנה'), g(p, 'קיבל', 'קיבלה')],
-        visual: hopLine(a, [-b, c], false),
+        visual: hopLine(a, [-b, c]),
         steps: [{ text: `${a} − ${b} = ⬜`, answer: a - b }],
         after: `ועכשיו מוסיפים את מה ש${g(p, 'קיבל', 'קיבלה')} 😉`,
       },
@@ -879,8 +895,17 @@ function time(r: Rng): Question {
     const end = start + dur;
     const hourOnly = (Math.floor(end / 60) - Math.floor(start / 60)) * 60;
     const hint: Hint = {
-      ask: `מה השעה ${g(p, 'כשיצא', 'כשיצאה')}? מה השעה ${g(p, 'כשחזר', 'כשחזרה')}? ${dur % 60 ? 'סופרים קודם שעות שלמות, ואז את חצי השעה.' : 'סופרים כמה שעות שלמות עברו.'}`,
-      visual: { kind: 'clock', faces: [{ t: start, caption: `יציאה ${clock(start)}` }, { t: end, caption: `חזרה ${clock(end)}` }] },
+      ask: `מתי ${g(p, 'יצא', 'יצאה')}? מתי ${g(p, 'חזר', 'חזרה')}? ${dur % 60 ? 'סופרים קודם שעות שלמות, ואז את חצי השעה.' : 'סופרים כמה שעות שלמות עברו.'}`,
+      // she moves the hands from the start until they cover the dashed ones (the return time); a button never adds
+      // exactly the answer, and the time she added is never written
+      visual: {
+        kind: 'clock',
+        start,
+        caption: `יציאה ${clock(start)}`,
+        target: { t: end, caption: `חזרה ${clock(end)}` },
+        adds: [30, 60].filter((m) => m !== dur),
+        elapsed: false,
+      },
     };
     if (start % 60 === 30 && end % 60 === 0) {
       const up = start + 30;
@@ -923,14 +948,10 @@ function time(r: Rng): Question {
       explain: `השיעור נגמר ב־${L(clock(start + 45))}. ועוד ${L(String(brk))} דקות הפסקה: ${L(clock(ans))}`,
       ...numberChoice(r, ans, [[start + 45, 'זה סוף השיעור. שכחת את ההפסקה!'], ans + 15, ans - 15, start + 60 + brk], { fmt: clock, max: 24 * 60 }),
     }, {
-      ask: `מה השעה בהתחלה? כמה זמן עובר עד השיעור הבא? (שיעור, ועוד הפסקה)`,
+      ask: 'מתי מתחיל השיעור? כמה זמן עובר עד השיעור הבא? שיעור, ועוד הפסקה.',
       highlight: ['45 דקות', 'הפסקה'],
-      visual: {
-        kind: 'clock',
-        faces: [{ t: start, caption: `התחלה ${clock(start)}` }],
-        // only the lesson: an arc for the break would end on the answer
-        arcs: [{ from: start, min: 45, label: 'שיעור 45 דק׳', ring: 'minute' }],
-      },
+      // the hands' time is never written; how much she added is (it's a duration, the answer is a clock time)
+      visual: { kind: 'clock', start, caption: `התחלה ${clock(start)}`, adds: [5, 15, 30, 60], elapsed: true },
       steps: start % 60
         ? [
             { text: `45 + ${brk} = ⬜`, answer: 45 + brk },
@@ -955,12 +976,7 @@ function time(r: Rng): Question {
     ...numberChoice(r, ans, [ans + 30, ans - 30, ans + 60, start + 60], { fmt: clock, max: 24 * 60 }),
   }, {
     ask: `מה השעה בהתחלה? כמה זמן עובר? ${dur % 60 ? 'מוסיפים קודם את השעות השלמות, ואז את חצי השעה.' : 'מוסיפים את השעות.'}`,
-    // the whole hours as an arc only when a half hour is still left for her (otherwise the arc ends on the answer)
-    visual: {
-      kind: 'clock',
-      faces: [{ t: start, caption: `התחלה ${clock(start)}` }],
-      arcs: dur % 60 ? [{ from: start, min: hours * 60, label: duration(hours * 60), ring: 'hour' }] : undefined,
-    },
+    visual: { kind: 'clock', start, caption: `התחלה ${clock(start)}`, adds: [30, 60], elapsed: true },
     steps: dur % 60 ? [{ text: `${Math.floor(start / 60)} + ${hours} = ⬜`, answer: Math.floor(start / 60) + hours }] : undefined,
     after: dur % 60 ? `${L(clock(start + hours * 60))} ועוד חצי שעה. מתי זה? 😉` : 'כל שעה, המחוג הקטן זז מספר אחד קדימה 😉',
   });
@@ -975,12 +991,18 @@ function sequence(r: Rng): Question {
     const shown = [...terms.slice(0, hole).map(String), '?', ...terms.slice(hole + 1).map(String)];
     return withHint({ type: 'sequence', prompt, lines: [shown.join(', ')], explain, ...numberChoice(r, ans, wrongs) }, hint);
   };
-  /** Boxes for the shown terms (and the '?'), with '?' arrows between neighbours. */
-  const chain = (shown: (number | '?')[], pairs: [number, number][], below: [number, number][] = []): Hint['visual'] => ({
-    kind: 'chain',
-    items: shown.map(String),
-    arcs: [...pairs.map(([from, to]) => ({ from, to, label: '?' })), ...below.map(([from, to]) => ({ from, to, label: '?', below: true }))],
-  });
+  /**
+   * Boxes for the shown terms (and the '?'), with '?' arrows between them. She can tap an arrow between two shown
+   * numbers and type its jump, unless that jump's size is the answer (then the arrow just stays '?').
+   */
+  const chain = (shown: (number | '?')[], ans: number, pairs: [number, number][], below: [number, number][] = []): Hint['visual'] => {
+    const arc = (from: number, to: number, under = false) => {
+      const [a, b] = [shown[from], shown[to]];
+      const jump = a === '?' || b === '?' || Math.abs(b - a) === ans ? undefined : b - a;
+      return { from, to, label: '?', ...(under ? { below: true } : {}), ...(jump === undefined ? {} : { jump }) };
+    };
+    return { kind: 'chain', items: shown.map(String), arcs: [...pairs.map(([f, t]) => arc(f, t)), ...below.map(([f, t]) => arc(f, t, true))] };
+  };
   const diff = (a: number, b: number) => (b >= a ? { text: `${a} + ⬜ = ${b}`, answer: b - a } : { text: `${a} − ⬜ = ${b}`, answer: a - b });
 
   if (kind === 'step') {
@@ -992,7 +1014,7 @@ function sequence(r: Rng): Question {
     return mk(terms, terms[hole], [terms[hole] + 1, terms[hole] - 1, terms[hole] + d, terms[hole] - d],
       `כל פעם ${d > 0 ? 'מוסיפים' : 'מורידים'} ${L(String(Math.abs(d)))}`, {
         ask: 'מה הקפיצה בין שני המספרים הראשונים? בדקי שזו אותה קפיצה גם בהמשך.',
-        visual: chain(shown, [[0, 1], [1, 2], [2, 3], [3, 4]]),
+        visual: chain(shown, terms[hole], [[0, 1], [1, 2], [2, 3], [3, 4]]),
         steps: [[0, 1], [1, 2], [2, 3], [3, 4]]
           .filter(([i, j]) => i !== hole && j !== hole)
           .slice(0, 2)
@@ -1008,7 +1030,7 @@ function sequence(r: Rng): Question {
     return mk(terms.slice(0, 5), terms[5], [terms[4] + b, terms[5] + 1, terms[5] - 1],
       `מוסיפים לסירוגין ${L(`+${a}`)} ואז ${L(`+${b}`)}: ${L(`${terms[4]} + ${a} = ${terms[5]}`)}`, {
         ask: 'מה הקפיצות? האם זו אותה קפיצה כל פעם, או שהקפיצות מתחלפות?',
-        visual: chain([...terms.slice(0, 5), '?'], [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5]]),
+        visual: chain([...terms.slice(0, 5), '?'], terms[5], [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5]]),
         steps: [diff(terms[0], terms[1]), diff(terms[1], terms[2]), diff(terms[2], terms[3])],
         after: 'הקפיצות מתחלפות. איזו קפיצה באה עכשיו? 😉',
       });
@@ -1019,8 +1041,8 @@ function sequence(r: Rng): Question {
     const ans = terms[4];
     return mk(terms.slice(0, 4), ans, [[terms[3] + (terms[3] - terms[2]), 'כאן לא מוסיפים אותו מספר, אלא מכפילים.'], ans + 2, ans - 2],
       `כל מספר הוא פי 2 מהקודם: ${L(`${terms[3]} × 2 = ${ans}`)}`, {
-        ask: 'הקפיצות גדלות! אולי זה לא ״ועוד״, אלא ״כפול״? בדקי: פי כמה כל מספר מהקודם?',
-        visual: chain([...terms.slice(0, 4), '?'], [[0, 1], [1, 2], [2, 3], [3, 4]]),
+        ask: 'הקפיצות גדלות! אולי כל פעם כופלים? בדקי: פי כמה כל מספר מהקודם?',
+        visual: chain([...terms.slice(0, 4), '?'], ans, [[0, 1], [1, 2], [2, 3], [3, 4]]),
         steps: [{ text: `${terms[0]} × ⬜ = ${terms[1]}`, answer: 2 }, { text: `${terms[1]} × ⬜ = ${terms[2]}`, answer: 2 }],
         after: 'אותו דבר כל פעם. ומה בא אחרי המספר האחרון? 😉',
       });
@@ -1037,7 +1059,7 @@ function sequence(r: Rng): Question {
     return mk(terms, ans, [[terms[4] + diffs[3], 'ההפרש משתנה כל פעם, לא נשאר אותו דבר.'], ans + 1, ans - 1],
       `ההפרשים: ${L(diffs.map((d) => (d > 0 ? `+${d}` : `${d}`)).join(', '))}, אז עכשיו ${L(nextDiff > 0 ? `+${nextDiff}` : String(nextDiff))}: ${L(String(ans))}`, {
         ask: `מה הקפיצה בין כל שני מספרים? האם הקפיצה ${growing ? 'גדלה' : 'קטנה'}?`,
-        visual: chain([...terms, '?'], [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5]]),
+        visual: chain([...terms, '?'], ans, [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5]]),
         steps: [diff(terms[0], terms[1]), diff(terms[1], terms[2]), diff(terms[2], terms[3])],
         after: `הקפיצה ${growing ? 'גדלה' : 'קטנה'} כל פעם ב־${L(1)}. מה תהיה הקפיצה הבאה? 😉`,
       });
@@ -1051,7 +1073,7 @@ function sequence(r: Rng): Question {
   return mk(terms, ans, [[m * (a0 + 3), 'זה המספר הבא בסדרה השנייה. בודקים איזו סדרה ממשיכה.'], ans + 1, terms[5] + 1],
     `שתי סדרות לסירוגין: ${L(`${a0}, ${a0 + 1}, ${a0 + 2}`)} (עוד 1) ו־${L(`${m * a0}, ${m * (a0 + 1)}, ${m * (a0 + 2)}`)} (פי ${L(String(m))}). עכשיו תורה של הראשונה: ${L(String(ans))}`, {
       ask: 'אין קפיצה אחת קבועה? אולי יש כאן שתי סדרות שמתחלפות! הסתכלי על כל מספר שני.',
-      visual: chain([...terms, '?'], [[0, 2], [2, 4], [4, 6]], [[1, 3], [3, 5]]),
+      visual: chain([...terms, '?'], ans, [[0, 2], [2, 4], [4, 6]], [[1, 3], [3, 5]]),
       steps: [{ text: `${a0} + ⬜ = ${a0 + 1}`, answer: 1 }, { text: `${m * a0} + ⬜ = ${m * (a0 + 1)}`, answer: m }],
       after: 'עכשיו: של איזו סדרה התור? 😉',
     });
