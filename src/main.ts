@@ -17,7 +17,7 @@ import {
 } from './model';
 import { isSmartSolve, madeShortcut } from './smart';
 import { claimNoShortcut, judge } from './game';
-import { PROBLEMS, type Problem } from './problems';
+import { PROBLEMS, type CoachUntil, type Problem } from './problems';
 import { PLAYER_NAME, REWARD_TEXT, SMART_FOR_REWARD } from './config';
 import { recordProblem, startSession, type ProblemLog, type Session, type StepRecord } from './log';
 import { openParentScreen } from './parent';
@@ -35,6 +35,7 @@ type Play = {
   busy: boolean;
   unlocked: boolean;
   claims: number;
+  coach: number;
 };
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -139,6 +140,7 @@ function renderProblem(): void {
     busy: false,
     unlocked: false,
     claims: 0,
+    coach: 0,
     log: {
       problemId: problem.id,
       problem: problem.text,
@@ -166,7 +168,7 @@ function renderProblem(): void {
   answerRow.append(el('span', 'eq', '='), el('div', 'answer'));
 
   const gate = el('div', 'gate');
-  gate.append(el('p', 'gate-text', '🔒 מצאי עשרת שלמה כדי לענות'), button('claim', 'אין פה קיצור 🤷‍♀️', onClaim));
+  gate.append(el('p', 'gate-text', '🔒 המקלדת תיפתח כשתמצאי עשרת שלמה'), button('claim', 'לא מצאתי קיצור 🤷‍♀️', onClaim));
 
   const keypad = el('div', 'keypad hidden');
   keypad.dir = 'ltr';
@@ -243,13 +245,46 @@ function renderExpr(): void {
 
   $<HTMLButtonElement>('.undo').disabled = play.done || play.history.length === 0;
   $<HTMLButtonElement>('.reset').disabled = play.done || sameShape(play.expr, play.original);
+  renderCoach();
+}
+
+// ---------- guided demo (first problem of each trick) ----------
+
+const coachSteps = () => play.problem.coach ?? [];
+const coachActive = () => Boolean(coachSteps()[play.coach]?.until);
+
+function renderCoach(): void {
+  // found the ten her own way: skip straight to the "see?" wrap-up
+  if (coachActive() && madeShortcut(play.expr)) play.coach = coachSteps().length - 1;
+  app.querySelectorAll('.coach-target').forEach((n) => n.classList.remove('coach-target'));
+  const hint = $<HTMLParagraphElement>('.hint');
+  const step = play.done ? undefined : coachSteps()[play.coach];
+  hint.textContent = step?.say ?? play.problem.hint ?? '';
+  hint.classList.toggle('coach-say', Boolean(step));
+  if (step?.target) app.querySelector(step.target)?.classList.add('coach-target');
   updateGate();
+}
+
+function coachEvent(e: CoachUntil): void {
+  const until = coachSteps()[play.coach]?.until;
+  if (!until || until.ev !== e.ev) return;
+  if ('id' in until && 'id' in e && until.id !== e.id) return;
+  if ('kind' in until && 'kind' in e && until.kind !== e.kind) return;
+  play.coach++;
+  renderCoach();
+}
+
+/** She wandered off the guided path (cancelled, undid, reset): start the demo over. */
+function coachRestart(): void {
+  if (!coachActive()) return;
+  play.coach = 0;
+  renderCoach();
 }
 
 /** Keypad opens once she built a shortcut or claimed there is none; once open it stays open. */
 function updateGate(): void {
   if (!play.unlocked && madeShortcut(play.expr)) play.unlocked = true;
-  $<HTMLDivElement>('.gate').classList.toggle('hidden', play.unlocked || play.done);
+  $<HTMLDivElement>('.gate').classList.toggle('hidden', play.unlocked || play.done || coachActive());
   $<HTMLDivElement>('.keypad').classList.toggle('hidden', !play.unlocked || play.done);
 }
 
@@ -272,6 +307,7 @@ function logStep(type: StepRecord['type'], expr: Expr = play.expr): void {
 function select(id: string | null): void {
   play.selected = id;
   renderExpr();
+  if (id) coachEvent({ ev: 'select', id });
 }
 
 function apply(r: OpResult, type: 'move' | 'split' | 'round', tileId: string): void {
@@ -282,6 +318,7 @@ function apply(r: OpResult, type: 'move' | 'split' | 'round', tileId: string): v
   logStep(type);
   $<HTMLParagraphElement>('.toast').textContent = '';
   renderExpr();
+  coachEvent({ ev: 'apply', kind: type });
 
   const merged = mergeRoundPrefix(play.expr);
   if (!merged) return;
@@ -296,6 +333,7 @@ function apply(r: OpResult, type: 'move' | 'split' | 'round', tileId: string): v
     const tile = $<HTMLElement>('.tile.made');
     replayAnimation(tile, 'merge-pop');
     sparkle(tile, 10);
+    coachEvent({ ev: 'merge' });
   }, MERGE_DELAY_MS);
 }
 
@@ -340,6 +378,7 @@ function openActions(id: string): void {
   const close = () => {
     backdrop.remove();
     select(null);
+    coachRestart();
   };
   const choose = (r: () => OpResult, type: 'split' | 'round') => () => {
     backdrop.remove();
@@ -353,7 +392,9 @@ function openActions(id: string): void {
     grid.dir = 'ltr';
     for (const [a, b] of options) {
       const label = neg ? `−${a} − ${b}` : `${a} + ${b}`;
-      grid.append(button('split-opt', label, choose(() => split(play.expr, i, a), 'split')));
+      const opt = button('split-opt', label, choose(() => split(play.expr, i, a), 'split'));
+      opt.dataset.label = label;
+      grid.append(opt);
     }
     sheet.append(el('p', 'sheet-label', 'לפרק'), grid);
   }
@@ -367,6 +408,8 @@ function openActions(id: string): void {
   backdrop.append(sheet);
   backdrop.addEventListener('click', (e) => e.target === backdrop && close());
   $<HTMLElement>('.screen').append(backdrop);
+  renderCoach();
+  coachEvent({ ev: 'open', id });
 }
 
 function undo(): void {
@@ -376,6 +419,7 @@ function undo(): void {
   play.selected = null;
   logStep('undo');
   renderExpr();
+  coachRestart();
 }
 
 function reset(): void {
@@ -385,6 +429,7 @@ function reset(): void {
   play.selected = null;
   logStep('reset');
   renderExpr();
+  coachRestart();
 }
 
 function onClaim(): void {
