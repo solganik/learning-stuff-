@@ -596,6 +596,7 @@ const g = (p: Person, m: string, f: string) => (p.f ? f : m);
 function word(r: Rng): Question {
   const kind = pick(r, [
     'change', 'groups', 'share', 'twoStep', 'age', 'line', 'gaveGot', 'week', 'boxes', 'timesLess', 'sumShare', 'half',
+    'rest', 'doubleChain',
   ] as const);
   const p = pick(r, PEOPLE);
   const q = (prompt: string, answer: number, wrongs: Wrong[], explain: string, hint: Hint): Question => {
@@ -808,6 +809,8 @@ function word(r: Rng): Question {
       },
     );
   }
+  if (kind === 'rest') return wordRest(r, p, q, seg);
+  if (kind === 'doubleChain') return wordDoubleChain(r, p, q);
   const n = 2 * int(r, 10, 16);
   const k = int(r, 2, 6);
   return q(
@@ -821,6 +824,55 @@ function word(r: Rng): Question {
       visual: { kind: 'bar', rows: [{ segs: [seg(n / 2, 'חצי'), seg(k), seg(n / 2 - k, '?')] }], total: seg(n) },
       steps: [{ text: `${n} ÷ 2 = ⬜`, answer: n / 2 }],
       after: `ועכשיו מורידים את ה־${L(k)} שהלכו הביתה 😉`,
+    },
+  );
+}
+
+// ---------- new word templates: "the rest of a whole" and a chain of multiplications ----------
+
+function wordRest(r: Rng, p: Person, q: (prompt: string, answer: number, wrongs: Wrong[], explain: string, hint: Hint) => Question, seg: (v: number, label?: string) => { v: number; label: string }): Question {
+  // a whole made of N items, split into two named parts and "the rest"
+  const whole = int(r, 10, 40);
+  const a = int(r, 2, Math.floor(whole / 2) - 1);
+  const b = int(r, 2, whole - a - 2);
+  const rest = whole - a - b;
+  const item = pick(r, ['ירקות', 'פירות', 'פרחים', 'בלונים', 'עוגיות']);
+  const partA = pick(r, ['עגבניות', 'מלפפונים', 'תפוחים', 'בננות', 'ורדים', 'כחולים', 'שוקולד']);
+  const partB = pick(r, ['מלפפונים', 'עגבניות', 'אגסים', 'ענבים', 'חבצבות', 'אדומים', 'ווניל']);
+  return q(
+    `${p.n} ${g(p, 'סידר', 'סידרה')} ${whole} ${item} בסל. ${a} ${partA}, ${b} ${partB}, והשאר ${pick(r, ['גזרים', 'תפוזים', 'חבצבות', 'צהובים', 'קשקשים'])}. כמה מה${item} הם השאר?`,
+    rest,
+    [[a + b, TRAP.step], [whole - a, 'הורדת רק חלק אחד, לא את שניהם.'], rest + 1, rest - 1],
+    `שני חלקים יחד: ${L(`${a} + ${b} = ${a + b}`)}, והשאר: ${L(`${whole} − ${a + b} = ${rest}`)}`,
+    {
+      ask: `כל ה${item} זה ${L(whole)}. קודם מחברים את שני החלקים שידועים, ואז מה שנשאר זה השאר.`,
+      highlight: ['השאר', String(whole)],
+      visual: { kind: 'bar', rows: [{ segs: [seg(a, String(a)), seg(b, String(b)), seg(rest, '?')] }], total: seg(whole, String(whole)) },
+      steps: [{ text: `${a} + ${b} = ⬜`, answer: a + b }],
+      after: `ועכשיו: כמה נשאר מ־${L(whole)}? 😉`,
+    },
+  );
+}
+
+function wordDoubleChain(r: Rng, _p: Person, q: (prompt: string, answer: number, wrongs: Wrong[], explain: string, hint: Hint) => Question): Question {
+  // "twice as many", then "3 times as many" — a chain of multiplications
+  const [p1, p2, p3] = shuffle(r, PEOPLE);
+  const base = int(r, 3, 9);
+  const f2 = pick(r, [2, 3]);
+  const f3 = pick(r, [2, 3, 4]);
+  const mid = base * f2;
+  const ans = mid * f3;
+  return q(
+    `ל${p1.n} יש ${base} גולות. ל${p2.n} יש פי ${f2} גולות מאשר ל${p1.n}. ל${p3.n} יש פי ${f3} גולות מאשר ל${p2.n}. כמה גולות יש ל${p3.n}?`,
+    ans,
+    [[mid, TRAP.step], [base * f3, 'כפלת ישר ב־' + String(f3) + ', בלי השלב האמצעי.'], [base + f2 + f3, TRAP.add], ans + 1],
+    `שני שלבים! ל${p2.n}: ${L(`${base} × ${f2} = ${mid}`)}. ל${p3.n}: ${L(`${mid} × ${f3} = ${ans}`)}`,
+    {
+      ask: `שני שלבים. קודם כמה יש ל${p2.n}? ״פי ${L(f2)}״ זה אותו מספר ${f2 === 2 ? 'פעמיים' : `${L(f2)} פעמים`}. אחר כך עוד פעם, פי ${L(f3)}.`,
+      highlight: [`פי ${f2}`, `פי ${f3}`],
+      visual: { kind: 'groups', n: f3, per: mid, total: '?' },
+      steps: [{ text: `${base} × ${f2} = ⬜`, answer: mid }],
+      after: `ועכשיו כפילי את זה פי ${L(f3)} 😉`,
     },
   );
 }
@@ -999,7 +1051,7 @@ function time(r: Rng): Question {
 // ---------- T10 סדרות ----------
 
 function sequence(r: Rng): Question {
-  const kind = pick(r, ['step', 'alternate', 'double', 'growing', 'shrinking', 'twoSeries'] as const);
+  const kind = pick(r, ['step', 'alternate', 'double', 'growing', 'shrinking', 'twoSeries', 'halve'] as const);
   const prompt = 'איזה מספר בא במקום סימן השאלה?';
   const mk = (terms: number[], ans: number, wrongs: Wrong[], explain: string, hint: Hint, hole = terms.length): Question => {
     const shown = [...terms.slice(0, hole).map(String), '?', ...terms.slice(hole + 1).map(String)];
@@ -1078,6 +1130,20 @@ function sequence(r: Rng): Question {
         after: `הקפיצה ${growing ? 'גדלה' : 'קטנה'} כל פעם ב־${L(1)}. מה תהיה הקפיצה הבאה? 😉`,
       });
   }
+  if (kind === 'halve') {
+    // each term is half the previous: start, start/2, ... start/16, ?
+    const start = int(r, 1, 7) * 16;
+    const terms = Array.from({ length: 5 }, (_, i) => start / 2 ** i);
+    const ans = terms[4];
+    const shown: (number | '?')[] = terms.map((t, i) => (i === 4 ? '?' : t));
+    return mk(terms, ans, [[ans * 2, 'זה המספר שלפניו, לא הבא.'], [Math.max(1, ans / 2 | 0), 'חילקת פעם אחת יותר מדי.'], ans + 1, ans - 1],
+      `כל פעם מחלקים ב־${L(2)}: ${L(`${terms[3]} ÷ 2 = ${ans}`)}`, {
+        ask: 'מה הקפיצה בין שני המספרים הראשונים? הקפיצה הולכת לאותו כיוון, אבל קטנה — אולי מחלקים?',
+        visual: chain(shown, ans, [[0, 1], [1, 2], [2, 3], [3, 4]]),
+        steps: [diff(terms[0], terms[1]), diff(terms[1], terms[2])],
+        after: 'אותו כיוון כל פעם: מחלקים באותו מספר. מה יוצא מהמספר האחרון? 😉',
+      }, 4);
+  }
   // two interleaved series: 1, 4, 2, 8, 3, 12, ?
   const a0 = int(r, 1, 5);
   const m = int(r, 2, 5);
@@ -1131,7 +1197,7 @@ const TRI = '△';
 
 /** Every △ hides the same digit; find it. Four templates mirroring the real test. */
 function triangle(r: Rng): Question {
-  const kind = pick(r, ['addPair', 'mulSub', 'triple', 'twin'] as const);
+  const kind = pick(r, ['addPair', 'mulSub', 'triple', 'twin', 'mulAddTri'] as const);
   const openQ = r() < 0.3;
   const base = (line: string, d: number, wrongs: Wrong[], explain: string, hint: Hint): Question => {
     const b: Question = {
@@ -1193,6 +1259,20 @@ function triangle(r: Rng): Question {
       [[Math.round(n / 3) + 1, ''], [Math.round(n / 3) - 1, ''], [n - 3, 'זה 3 × 2, לא 3 × הספרה.'], n % 10],
       explain,
       { ask: `שלוש פעמים אותה ספרה שווה ${L(n)}. איזו ספרה כשמכפילים אותה שלוש פעמים מקבלים ${L(n)}?` },
+    );
+  }
+  if (kind === 'mulAddTri') {
+    // △ × △ + △ = n, e.g. 5 × 5 + 5 = 30. n = d² + d = d(d+1).
+    const d = int(r, 2, 9);
+    const n = d * d + d;
+    const line = `${TRI} × ${TRI} + ${TRI} = ${n}`;
+    const explain = `מציבים ${TRI} = ${L(d)}: ${L(`${d} × ${d} + ${d} = ${d * d} + ${d} = ${n}`)} ✓`;
+    return base(
+      line,
+      d,
+      [[Math.round(Math.sqrt(n)), 'זה בערך שורש התוצאה, לא הספרה.'], [d + 1, ''], [d - 1, ''], d + 2],
+      explain,
+      { ask: `כל ${TRI} הוא אותה ספרה. נסי להציב ספרה ולבדוק: קודם כפל, ואז חיבור.` },
     );
   }
   // twin: △△ + add = total, e.g. 33 + 12 = 45. △△ = 11d.

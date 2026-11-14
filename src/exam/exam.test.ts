@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MATH_EXAM_PLAN, MATH_GENERATORS, isRight, mathExam, rng, type MathType, type Question } from './questions';
 import { ALL_CORRECT, PASSAGES, passageQuestions, readingExam } from './reading';
 import { BANK_SIZE, bankQuestions } from './bank';
-import { OFFICIAL_MATH_SIZE, OFFICIAL_READING_SIZE, officialExam } from './officialBank';
+import { OFFICIAL_MATH_SIZE, OFFICIAL_READING_SIZE, officialExam, officialExam2, OFFICIAL_MATH_2_SIZE, OFFICIAL_READING_2_SIZE } from './officialBank';
 
 const SEEDS = Array.from({ length: 400 }, (_, i) => i * 7919 + 1);
 const TYPES = Object.keys(MATH_GENERATORS) as MathType[];
@@ -58,6 +58,7 @@ function fitsSequenceRule(nums: number[]): boolean {
     d.every((v) => v === d[0]) ||
     (d.every((v, i) => v === d[i % 2]) && d[0] !== d[1]) ||
     nums.every((n, i) => i === 0 || n === 2 * nums[i - 1]) ||
+    nums.every((n, i) => i === 0 || 2 * n === nums[i - 1]) ||
     (dd.every((v) => v === dd[0]) && dd[0] !== 0) ||
     (arithmetic(evens) && arithmetic(odds) && evens.length >= 3 && odds.length >= 3)
   );
@@ -207,6 +208,27 @@ describe('official sample exam bank', () => {
 
   it('math covers all 4 משימות (arith, missing, inequality, triangle, word)', () => {
     const { math } = officialExam(3);
+    const types = new Set(math.map((q) => q.type));
+    expect(types).toContain('arith');
+    expect(types).toContain('inequality');
+    expect(types).toContain('triangle');
+    expect(types).toContain('word');
+  });
+});
+
+describe('second official sample exam bank', () => {
+  it('has ~14 math questions and 2 reading passages worth of questions, all well formed', () => {
+    const { math, reading } = officialExam2(7);
+    expect(math).toHaveLength(OFFICIAL_MATH_2_SIZE);
+    expect(OFFICIAL_MATH_2_SIZE).toBeGreaterThanOrEqual(13);
+    expect(OFFICIAL_MATH_2_SIZE).toBeLessThanOrEqual(15);
+    expect(reading).toHaveLength(OFFICIAL_READING_2_SIZE);
+    expect(OFFICIAL_READING_2_SIZE).toBeGreaterThanOrEqual(12);
+    for (const q of [...math, ...reading]) checkQuestion(q);
+  });
+
+  it('math covers all 4 משימות (arith, missing, inequality, triangle, word)', () => {
+    const { math } = officialExam2(3);
     const types = new Set(math.map((q) => q.type));
     expect(types).toContain('arith');
     expect(types).toContain('inequality');
