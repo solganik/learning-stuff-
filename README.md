@@ -42,7 +42,7 @@ session; if the computer's IP changes, the phone sees a fresh, empty log.
 
 ## Exam prep (מבחן מחוננים שלב א, grade 2)
 
-Start screen → "📝 הכנה למבחן". Based on `/Users/sashas/Documents/gifted-test-prep/` (HANDOVER.md, study guide).
+Start screen → "📝 הכנה למבחן". Based on the parent's gifted-test-prep notes (handover + study guide, kept outside this repo).
 The commercial catalogs there are used only as style references; all content here is original or from the
 study guide.
 

@@ -40,7 +40,7 @@ hosting, real art, sound. No friend data of any kind exists in this POC, so no p
 - Tiles and keypad buttons at least 64×64 px; tile movement via CSS transform transition (FLIP technique).
 - System font stack is fine (no web-font downloads).
 
-**Repo note:** `/Users/sashas/workspace/math-adventure` has a `.git` but `git status` fails with
+**Repo note:** the project folder has a `.git` but `git status` fails with
 "must be run in a work tree" and `main` has no commits. Check `git rev-parse --is-bare-repository` /
 `git config core.bare` and fix before the first commit.
 
