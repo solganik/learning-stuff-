@@ -153,11 +153,13 @@ export function mulSteps(k: number, f: number): { steps: HintStep[]; after?: str
   };
 }
 
-/** A nearby times fact for t ÷ k = x: k × ref, with ref ≠ x and k × ref ≠ x. */
+/** The times fact next to t ÷ k = x: k × (x − 1), or k × (x + 1) when x − 1 is too small or hits the answer. */
 export function nearbyFact(k: number, x: number): { steps: HintStep[]; after: string } {
-  const order = x <= 3 ? [3, 2, 4] : [5, 4, 6, 3];
-  const ref = order.find((m) => m !== x && k * m !== x)!;
-  return { steps: [{ text: `${k} × ${ref} = ⬜`, answer: k * ref }], after: `צריך יותר או פחות מ־${L(ref)}?` };
+  const ref = [x - 1, x + 1].find((m) => m >= 2 && m !== x && k * m !== x)!;
+  return {
+    steps: [{ text: `${k} × ${ref} = ⬜`, answer: k * ref }],
+    after: `צריך להגיע ל־${L(k * x)}. אז יותר או פחות מ־${L(ref)}? 😉`,
+  };
 }
 
 // ---------- dealing dots into groups (÷ drawings) ----------

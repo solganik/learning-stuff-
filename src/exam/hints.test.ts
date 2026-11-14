@@ -301,6 +301,11 @@ describe('moving the clock hands (time)', () => {
       expect(goal, `${where(q)} can't reach the goal with the buttons`).toBe(true);
     }
   });
+
+  it('whole-hour trips (8:00 → 14:00) have no "⬜ hours" step: the clock is the hint', () => {
+    for (const { q, v } of clocks)
+      if (v.target && (v.target.t - v.start) % 60 === 0) expect(q.hint!.steps, where(q)).toBeUndefined();
+  });
 });
 
 describe('making the hops on a number line', () => {
@@ -383,6 +388,16 @@ describe('building the bar model with number chips', () => {
       expect(done, `${where(q)} the model can't be finished`).toBe(true);
     }
   });
+
+  it('the queue drawing uses the person from the question', () => {
+    const queues = withVisual('bar').filter(({ q }) => q.prompt.includes('עומדים בתור'));
+    expect(queues.length).toBeGreaterThan(5);
+    for (const { q, v } of queues) {
+      const name = v.rows[0].segs[1].label;
+      expect(q.prompt, where(q)).toContain(`${name} `);
+      expect(q.hint!.ask, where(q)).toContain(name);
+    }
+  });
 });
 
 describe('finding the jumps on sequence arrows', () => {
@@ -450,6 +465,17 @@ describe('trying digits for ☀ (digit)', () => {
       }
     }
   });
+
+  it('☀☀: the example numbers never use the answer digit', () => {
+    const twins = columns.filter(({ v }) => v.top === '☀☀');
+    expect(twins.length).toBeGreaterThan(50);
+    for (const { q } of twins) {
+      const inQuestion = new Set(numbersIn(q.lines![0]));
+      const examples = numbersIn(q.hint!.ask).filter((n) => n % 11 === 0 && n < 100 && !inQuestion.has(n));
+      expect(examples, where(q)).toHaveLength(2);
+      for (const n of examples) expect(n % 10, where(q)).not.toBe(q.value);
+    }
+  });
 });
 
 describe('lighting groups while counting (×)', () => {
@@ -471,3 +497,31 @@ describe('lighting groups while counting (×)', () => {
   });
 });
 
+describe('review fixes', () => {
+  it('compare: only the first option is worked, the rest are hers', () => {
+    for (const q of SEEDS.map((s) => MATH_GENERATORS.compare(rng(s)))) {
+      expect(q.hint!.steps, where(q)).toHaveLength(1);
+      expect(q.hint!.steps![0].text, where(q)).toBe(`${q.options[0]} = ⬜`);
+      expect(q.hint!.after, where(q)).toContain('עכשיו חשבי את האחרים באותה דרך');
+    }
+  });
+
+  it('÷: the nearby fact is the next one, k × (q − 1) or k × (q + 1)', () => {
+    const div = ALL.filter((q) => withVisual('groups', [q]).some(({ v }) => v.per === null) && q.hint!.steps?.length && q.type !== 'proportion');
+    expect(div.length).toBeGreaterThan(100);
+    for (const q of div) {
+      const [k, ref] = numbersIn(q.hint!.steps![0].text);
+      expect(Math.abs(ref - q.value!), `${where(q)} ${q.hint!.steps![0].text}`).toBe(1);
+      expect(k * ref, where(q)).not.toBe(q.value);
+    }
+  });
+
+  it('"פי 2" is "the same number twice", "פי 3" is "the same number 3 times"', () => {
+    const times = ALL.filter((q) => q.type === 'word' && /פי \d/.test(q.prompt) && q.prompt.includes('פחות'));
+    expect(times.length).toBeGreaterThan(5);
+    for (const q of times) {
+      const f = Number(q.prompt.match(/פי (\d)/)![1]);
+      expect(visible(q.hint!.ask), where(q)).toContain(f === 2 ? 'אותו מספר פעמיים' : `אותו מספר ${f} פעמים`);
+    }
+  });
+});

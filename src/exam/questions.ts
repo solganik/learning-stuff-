@@ -308,7 +308,7 @@ function arith(r: Rng): Question {
   const total = f * k;
   const explain = `חילוק זה כפל הפוך: כמה פעמים ${L(String(f))} נכנס ב־${L(String(total))}? ${L(`${k} × ${f} = ${total}`)}, אז ${L(`${total} ÷ ${f} = ${k}`)}`;
   return q(`${total} ÷ ${f}`, k, [[total - f, TRAP.wrongOp], k + 1, k - 1, f], explain, {
-    ask: `כמה פעמים ${L(f)} נכנס ב־${L(total)}? או: ${L(f)} כפול מה נותן ${L(total)}?`,
+    ask: `מחלקים ${L(total)} ל־${L(f)} קבוצות שוות. כמה יש בכל קבוצה?`,
     visual: { kind: 'groups', n: f, per: null, loose: total, total: String(total), note: 'חלקי לקבוצות שוות' },
     ...nearbyFact(f, k),
   });
@@ -355,7 +355,7 @@ function missing(r: Rng): Question {
     const add = addSteps(c, b);
     return q(eq(`${box} − ${b}`, String(c)), x, [[c - b, TRAP.opposite], x + 1, x - 1, x - 10],
       `הופכים לחיבור: ${L(`${c} + ${b} = ${x}`)}. בדיקה: ${L(`${x} − ${b} = ${c}`)} ✓`, {
-        ask: `חושבים הפוך: מאיזה מספר הורידו ${L(b)} ונשאר ${L(c)}? מה שהורידו ועוד מה שנשאר, זה המספר כולו.`,
+        ask: `חושבים הפוך: הורידו ${L(b)} ונשאר ${L(c)}. מה שהורידו ועוד מה שנשאר, זה המספר כולו!`,
         visual: { kind: 'bar', rows: [{ segs: [{ v: c, label: String(c) }, { v: b, label: String(b) }] }], total: { v: x, label: '?' } },
         steps: add.steps,
         after: add.steps.length ? `עכשיו סיימי את החיבור ${L(`${c} + ${b}`)} 😉` : undefined,
@@ -379,7 +379,7 @@ function missing(r: Rng): Question {
   if (kind === 'divide') {
     return q(eq(`${box} ÷ ${f}`, String(x)), c, [[x + f, TRAP.wrongOp], [x - f, TRAP.opposite], c + f, c - f],
       `הופכים לכפל: ${L(`${x} × ${f} = ${c}`)}. בדיקה: ${L(`${c} ÷ ${f} = ${x}`)} ✓`, {
-        ask: `חושבים הפוך: איזה מספר מחלקים ל־${L(f)} קבוצות שוות, ובכל קבוצה יוצא ${L(x)}?`,
+        ask: `חושבים הפוך: ${L(f)} קבוצות, ובכל קבוצה ${L(x)}. כמה יש בסך הכול?`,
         visual: { kind: 'groups', n: f, per: x, total: '?' },
         ...mulSteps(f, x),
       });
@@ -518,7 +518,8 @@ function digit(r: Rng): Question {
   if (r() < 0.3) {
     const add = int(r, 2, Math.min(30, 120 - 11 * d));
     const total = 11 * d + add;
-    const like = [22, 55, 77, 44].filter((n) => n % 10 !== d).slice(0, 2);
+    // examples of twin digits: never the answer digit, and not a number from the exercise
+    const like = [22, 55, 77, 44, 33].filter((n) => n % 10 !== d && n !== add && n !== total).slice(0, 2);
     return withHint({
       type: 'digit',
       prompt: `${SUN} היא ספרה. איזו ספרה היא?`,
@@ -601,7 +602,7 @@ function word(r: Rng): Question {
       [[pay - (p1 + p2), `שכחת לכפול: יש ${k} ${many}, לא אחת.`], [total, TRAP.step], pay - total + 1],
       `${L(`${k} × ${p2} = ${k * p2}`)}, ועוד ${L(String(p1))}: ${L(`${k * p2} + ${p1} = ${total}`)}. העודף: ${L(`${pay} − ${total} = ${pay - total}`)}`,
       {
-        ask: `כמה ${p.n} ${g(p, 'שילם', 'שילמה')}? כמה עלו כל הקניות? עודף = מה ששילמו פחות מה שהקניות עלו.`,
+        ask: `עודף זה מה שנשאר מהכסף ש${p.n} ${g(p, 'שילם', 'שילמה')}. קודם: כמה עלו כל הקניות?`,
         highlight: ['כל אחת', 'עודף'],
         visual: { kind: 'bar', rows: [{ segs: [seg(p1), seg(k * p2, `${k} × ${p2}`), seg(pay - total, '?')] }], total: seg(pay) },
         steps: [{ text: `${k} × ${p2} = ⬜`, answer: k * p2 }, { text: `${k * p2} + ${p1} = ⬜`, answer: total }],
@@ -634,7 +635,7 @@ function word(r: Rng): Question {
       [[t - k, TRAP.wrongOp], x + 1, x - 1, k],
       `${L(`${t} ÷ ${k} = ${x}`)}. בדיקה: ${L(`${k} × ${x} = ${t}`)} ✓`,
       {
-        ask: `מחלקים שווה בשווה: כמה מקבל כל חבר? ${L(k)} כפול מה נותן ${L(t)}?`,
+        ask: `מחלקים ${L(t)} מדבקות שווה בשווה ל־${L(k)} חברים. כמה מקבל כל אחד?`,
         highlight: ['שווה בשווה', 'כל חבר'],
         visual: { kind: 'groups', n: k, per: null, loose: t, total: String(t), note: 'חלקי לקבוצות שוות' },
         ...nearbyFact(k, x),
@@ -688,7 +689,7 @@ function word(r: Rng): Question {
       {
         ask: `כמה ילדים עומדים לפני ${p.n}? כמה ${g(p, 'אחריו', 'אחריה')}? ואל תשכחי את ${p.n} ${g(p, 'עצמו', 'עצמה')}!`,
         highlight: ['מההתחלה', 'מהסוף'],
-        visual: { kind: 'bar', rows: [{ segs: [seg(k - 1, 'לפני'), seg(1, '⭐'), seg(m - 1, 'אחרי')] }], total: seg(k + m - 1, '?') },
+        visual: { kind: 'bar', rows: [{ segs: [seg(k - 1, 'לפני'), seg(1, p.n), seg(m - 1, 'אחרי')] }], total: seg(k + m - 1, '?') },
         steps: [{ text: `${k} − 1 = ⬜`, answer: k - 1 }, { text: `${m} − 1 = ⬜`, answer: m - 1 }],
         after: `עכשיו חברי: לפני, אחרי, ועוד ${p.n} 😉`,
       },
@@ -702,7 +703,7 @@ function word(r: Rng): Question {
     return q(
       `ל${p.n} היו ${a} מדבקות. ${g(p, 'הוא נתן', 'היא נתנה')} ${b} ל${p2.n}, ואחר כך ${g(p, 'קיבל', 'קיבלה')} ${c} מחברה. כמה מדבקות יש ל${p.n} עכשיו?`,
       a - b + c,
-      [[a - b, TRAP.step], [a + b + c, TRAP.wrongOp], [a - b - c, 'קיבלה = מוסיפים, לא מורידים.'], a - b + c + 10],
+      [[a - b, TRAP.step], [a + b + c, TRAP.wrongOp], [a - b - c, `${g(p, 'קיבל', 'קיבלה')} = מוסיפים, לא מורידים.`], a - b + c + 10],
       `${L(`${a} − ${b} = ${a - b}`)}, ואז ${L(`${a - b} + ${c} = ${a - b + c}`)}`,
       {
         ask: `${g(p, 'נתן', 'נתנה')}: יש פחות. ${g(p, 'קיבל', 'קיבלה')}: יש יותר. עושים לפי הסדר.`,
@@ -757,7 +758,7 @@ function word(r: Rng): Question {
       [[a * f, TRAP.step], [a + f - d, TRAP.add], [a * f + d, '"פחות" = מורידים.'], a * f - d + 1],
       `ל${p2.n}: ${L(`${a} × ${f} = ${a * f}`)}. ל${p3.n}: ${L(`${a * f} − ${d} = ${a * f - d}`)}`,
       {
-        ask: `שני שלבים: קודם, כמה יש ל${p2.n}? (״פי ${L(f)}״ זה ${L(f)} פעמים.) אחר כך, ״פחות״ זה מורידים.`,
+        ask: `שני שלבים. קודם: כמה יש ל${p2.n}? ״פי ${L(f)}״ זה אותו מספר ${f === 2 ? 'פעמיים' : `${L(f)} פעמים`}. אחר כך: ״פחות״ זה מורידים.`,
         highlight: [`פי ${f}`, 'פחות'],
         visual: {
           kind: 'bar',
@@ -921,10 +922,7 @@ function time(r: Rng): Question {
         { text: `מ־${L(clock(down))} עד ${L(clock(end))} זה ⬜ דקות`, answer: 30 },
       ];
       hint.after = 'עכשיו חברי: השעות ועוד חצי השעה 😉';
-    } else if (dur > 60) {
-      hint.steps = [{ text: `מ־${L(clock(start))} עד ${L(clock(start + 60))} זה ⬜ שעות`, answer: 1 }];
-      hint.after = `וכמה שעות כאלה יש עד ${L(clock(end))}? 😉`;
-    } else hint.after = 'סופרים: כמה סיבובים שלמים עושה המחוג הגדול? 😉';
+    } else hint.after = 'סופרים: כמה סיבובים שלמים עשה המחוג הגדול? 😉';
     return withHint({
       type: 'time',
       prompt: `${p.n} ${g(p, 'יצא', 'יצאה')} מהבית ב־${L(clock(start))} ${g(p, 'וחזר', 'וחזרה')} ב־${L(clock(end))}. כמה זמן ${g(p, 'הוא היה', 'היא הייתה')} מחוץ לבית?`,
@@ -1106,8 +1104,8 @@ function compare(r: Rng): Question {
   }, {
     ask: `מחשבים כל תרגיל בנפרד, ואז משווים. מחפשים את התוצאה ה${biggest ? 'גדולה' : 'קטנה'} ביותר.`,
     highlight: [biggest ? 'הכי גדולה' : 'הכי קטנה'],
-    steps: order.slice(0, 3).map((x) => ({ text: `${x.e} = ⬜`, answer: x.v })),
-    after: `ועכשיו את התרגיל האחרון, ואז בחרי את ה${biggest ? 'גדול' : 'קטן'} ביותר 😉`,
+    steps: [{ text: `${order[0].e} = ⬜`, answer: order[0].v }],
+    after: 'עכשיו חשבי את האחרים באותה דרך 😉',
   });
 }
 
