@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MATH_EXAM_PLAN, MATH_GENERATORS, isRight, mathExam, rng, type MathType, type Question } from './questions';
 import { ALL_CORRECT, PASSAGES, passageQuestions, readingExam } from './reading';
 import { BANK_SIZE, bankQuestions } from './bank';
+import { OFFICIAL_MATH_SIZE, OFFICIAL_READING_SIZE, officialExam } from './officialBank';
 
 const SEEDS = Array.from({ length: 400 }, (_, i) => i * 7919 + 1);
 const TYPES = Object.keys(MATH_GENERATORS) as MathType[];
@@ -190,6 +191,27 @@ describe('study-guide bank', () => {
     const mc = bankQuestions(1)[10];
     expect(isRight(mc, mc.correct)).toBe(true);
     expect(isRight(mc, null)).toBe(false);
+  });
+});
+
+describe('official sample exam bank', () => {
+  it('has ~14 math questions and 2 reading passages worth of questions, all well formed', () => {
+    const { math, reading } = officialExam(7);
+    expect(math).toHaveLength(OFFICIAL_MATH_SIZE);
+    expect(OFFICIAL_MATH_SIZE).toBeGreaterThanOrEqual(13);
+    expect(OFFICIAL_MATH_SIZE).toBeLessThanOrEqual(15);
+    expect(reading).toHaveLength(OFFICIAL_READING_SIZE);
+    expect(OFFICIAL_READING_SIZE).toBeGreaterThanOrEqual(12);
+    for (const q of [...math, ...reading]) checkQuestion(q);
+  });
+
+  it('math covers all 4 משימות (arith, missing, inequality, triangle, word)', () => {
+    const { math } = officialExam(3);
+    const types = new Set(math.map((q) => q.type));
+    expect(types).toContain('arith');
+    expect(types).toContain('inequality');
+    expect(types).toContain('triangle');
+    expect(types).toContain('word');
   });
 });
 

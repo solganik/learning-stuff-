@@ -1,6 +1,7 @@
 import { isOpen, isRight, mathExam, mathPractice, TYPE_NAMES, type MathType, type Question } from './questions';
 import { PASSAGES, passageById, passageQuestions, readingExam } from './reading';
 import { bankQuestions } from './bank';
+import { officialExam } from './officialBank';
 import { printMockExam } from './print';
 import { saveExam, type ExamRecord } from '../log';
 import { openParentScreen } from '../parent';
@@ -11,7 +12,7 @@ const LETTERS = ['א', 'ב', 'ג', 'ד'];
 /** Like the real test: each section has a time limit, but nobody announces how much time is left. */
 export const SECTION_MINUTES = 20;
 const PRACTICE_SIZE = 10;
-const MATH_TOPICS: MathType[] = ['arith', 'missing', 'inequality', 'pictures', 'digit', 'word', 'proportion', 'time', 'sequence', 'compare'];
+const MATH_TOPICS: MathType[] = ['arith', 'missing', 'inequality', 'pictures', 'digit', 'word', 'proportion', 'time', 'sequence', 'compare', 'triangle'];
 
 type Section = { title: string; questions: Question[]; minutes: number };
 /** Practice hint progress for one question: rungs opened, steps solved, wrong tries on the current step. */
@@ -125,6 +126,15 @@ export function renderExamHome(root: HTMLElement, home: () => void): void {
         { title: 'חלק 1: הבנת הנקרא', questions: readingExam(seed), minutes: SECTION_MINUTES },
         { title: 'חלק 2: חשבון', questions: mathExam(seed), minutes: SECTION_MINUTES },
       ]),
+    ),
+    button('menu-btn big-btn', `🏛️ מבחן רשמי לדוגמה · ${2 * SECTION_MINUTES} דקות`, () =>
+      startRun('exam', 'מבחן רשמי לדוגמה', (seed) => {
+        const { math, reading } = officialExam(seed);
+        return [
+          { title: 'חלק 1: הבנת הנקרא', questions: reading, minutes: SECTION_MINUTES },
+          { title: 'חלק 2: חשבון', questions: math, minutes: SECTION_MINUTES },
+        ];
+      }),
     ),
     button('menu-btn', `🔢 רק חשבון · ${SECTION_MINUTES} דקות`, () =>
       startRun('exam', 'מבחן חשבון', (seed) => [{ title: 'חשבון', questions: mathExam(seed), minutes: SECTION_MINUTES }]),
