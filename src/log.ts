@@ -1,4 +1,7 @@
-export type StepRecord = { type: 'move' | 'split' | 'undo' | 'reset'; expr: string };
+export type StepRecord = {
+  type: 'move' | 'split' | 'round' | 'merge' | 'undo' | 'reset' | 'no-shortcut';
+  expr: string;
+};
 
 export type ProblemLog = {
   problemId: number;

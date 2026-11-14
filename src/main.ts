@@ -1,10 +1,25 @@
 import './style.css';
-import { format, move, parse, sameShape, signText, split, splitOptions, type Expr, type OpError } from './model';
-import { isSmartSolve } from './smart';
-import { judge } from './game';
+import {
+  format,
+  mergeRoundPrefix,
+  move,
+  parse,
+  round,
+  roundOption,
+  sameShape,
+  signText,
+  split,
+  splitOptions,
+  MAX_TERMS,
+  type Expr,
+  type OpError,
+  type OpResult,
+} from './model';
+import { isSmartSolve, madeShortcut } from './smart';
+import { claimNoShortcut, judge } from './game';
 import { PROBLEMS, type Problem } from './problems';
-import { PLAYER_NAME, REWARD_TEXT } from './config';
-import { recordProblem, startSession, type ProblemLog, type Session } from './log';
+import { PLAYER_NAME, REWARD_TEXT, SMART_FOR_REWARD } from './config';
+import { recordProblem, startSession, type ProblemLog, type Session, type StepRecord } from './log';
 import { openParentScreen } from './parent';
 
 type Play = {
@@ -17,9 +32,13 @@ type Play = {
   startedAt: number;
   log: ProblemLog;
   done: boolean;
+  busy: boolean;
+  unlocked: boolean;
+  claims: number;
 };
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
+const MERGE_DELAY_MS = 550;
 let session: Session;
 let index = 0;
 let totalStars = 0;
@@ -29,6 +48,7 @@ const OP_MESSAGES: Record<Exclude<OpError, 'noop'>, string> = {
   'leading-negative': 'מספר עם מינוס לא יכול להיות ראשון',
   'cannot-split': 'את 1 אי אפשר לפרק',
   'too-many-terms': 'יש כבר הרבה מספרים, נסי לבטל צעד',
+  locked: 'את המספר הזה כבר בנית 🙂',
 };
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] {
@@ -77,25 +97,29 @@ function renderStart(): void {
   screen.append(
     header(''),
     el('p', 'big', `שלום ${PLAYER_NAME}! 👋`),
-    el('p', 'lead', 'פתרי תרגילים ואספי כוכבים.\nמצאת דרך חכמה? תקבלי ⭐⭐⭐'),
+    el('p', 'lead', 'לפני שעונים, מחפשים עשרת שלמה 🔍\nדרך חכמה = ⭐⭐⭐'),
     button('cta', 'בואי נתחיל', () => renderProblem()),
   );
   app.replaceChildren(screen);
 }
 
 function renderEnd(): void {
+  const smartCount = session.problems.filter((p) => p.smart).length;
+  const earned = smartCount >= SMART_FOR_REWARD;
   const screen = el('main', 'screen center');
   const total = el('p', 'total', `${totalStars} ⭐`);
   screen.append(
     header(''),
     el('p', 'big', `סיימת, ${PLAYER_NAME}! 🎉`),
-    el('p', 'lead', 'אספת:'),
+    el('p', 'lead', `אספת ${totalStars} כוכבים\nומצאת ${smartCount} דרכים חכמות`),
     total,
-    el('p', 'reward', REWARD_TEXT),
+    earned
+      ? el('p', 'reward', REWARD_TEXT)
+      : el('p', 'reward almost', `עוד ${SMART_FOR_REWARD - smartCount} דרכים חכמות ותקבלי שפתון 💄`),
     button('cta', 'עוד פעם', renderStart),
   );
   app.replaceChildren(screen);
-  sparkle(total, 30);
+  sparkle(total, earned ? 30 : 12);
 }
 
 // ---------- problem screen ----------
@@ -112,6 +136,9 @@ function renderProblem(): void {
     input: '',
     startedAt: Date.now(),
     done: false,
+    busy: false,
+    unlocked: false,
+    claims: 0,
     log: {
       problemId: problem.id,
       problem: problem.text,
@@ -138,7 +165,10 @@ function renderProblem(): void {
   answerRow.dir = 'ltr';
   answerRow.append(el('span', 'eq', '='), el('div', 'answer'));
 
-  const keypad = el('div', 'keypad');
+  const gate = el('div', 'gate');
+  gate.append(el('p', 'gate-text', '🔒 מצאי עשרת שלמה כדי לענות'), button('claim', 'אין פה קיצור 🤷‍♀️', onClaim));
+
+  const keypad = el('div', 'keypad hidden');
   keypad.dir = 'ltr';
   for (const k of ['1', '2', '3', '4', '5', '6', '7', '8', '9', '⌫', '0', '✓']) {
     const cls = k === '✓' ? 'key ok' : k === '⌫' ? 'key back' : 'key';
@@ -153,6 +183,7 @@ function renderProblem(): void {
     tools,
     answerRow,
     el('div', 'feedback'),
+    gate,
     keypad,
   );
   screen.addEventListener('click', (e) => {
@@ -183,7 +214,8 @@ function renderExpr(): void {
   const nodes: HTMLElement[] = [];
   play.expr.forEach((t, i) => {
     nodes.push(gap(i));
-    const tile = el('button', i === sel ? 'tile selected' : 'tile');
+    const cls = ['tile', i === sel ? 'selected' : '', t.made ? 'made' : ''].filter(Boolean).join(' ');
+    const tile = el('button', cls);
     tile.type = 'button';
     tile.dataset.id = t.id;
     const s = signText(t, i);
@@ -193,9 +225,8 @@ function renderExpr(): void {
   });
   nodes.push(gap(play.expr.length));
   exprEl.replaceChildren(...nodes);
-  exprEl.classList.toggle('selecting', sel >= 0);
 
-  // FLIP: slide each tile from where it (or the tile it was split from) used to be
+  // FLIP: slide each tile from where it (or the tile it was split/merged from) used to be
   exprEl.querySelectorAll<HTMLElement>('.tile').forEach((tile) => {
     const id = tile.dataset.id!;
     const from = before.get(id) ?? before.get(id.slice(0, id.lastIndexOf('.')));
@@ -210,10 +241,16 @@ function renderExpr(): void {
     });
   });
 
-  const undoBtn = $<HTMLButtonElement>('.undo');
-  const resetBtn = $<HTMLButtonElement>('.reset');
-  undoBtn.disabled = play.done || play.history.length === 0;
-  resetBtn.disabled = play.done || sameShape(play.expr, play.original);
+  $<HTMLButtonElement>('.undo').disabled = play.done || play.history.length === 0;
+  $<HTMLButtonElement>('.reset').disabled = play.done || sameShape(play.expr, play.original);
+  updateGate();
+}
+
+/** Keypad opens once she built a shortcut or claimed there is none; once open it stays open. */
+function updateGate(): void {
+  if (!play.unlocked && madeShortcut(play.expr)) play.unlocked = true;
+  $<HTMLDivElement>('.gate').classList.toggle('hidden', play.unlocked || play.done);
+  $<HTMLDivElement>('.keypad').classList.toggle('hidden', !play.unlocked || play.done);
 }
 
 function renderAnswer(): void {
@@ -228,18 +265,38 @@ function toast(text: string): void {
   replayAnimation(t, 'show');
 }
 
+function logStep(type: StepRecord['type'], expr: Expr = play.expr): void {
+  play.log.steps.push({ type, expr: format(expr) });
+}
+
 function select(id: string | null): void {
   play.selected = id;
   renderExpr();
 }
 
-function apply(expr: Expr, type: 'move' | 'split'): void {
+function apply(r: OpResult, type: 'move' | 'split' | 'round', tileId: string): void {
+  if (!r.ok) return rejected(r.reason, tileId);
   play.history.push(play.expr);
-  play.expr = expr;
+  play.expr = r.expr;
   play.selected = null;
-  play.log.steps.push({ type, expr: format(expr) });
+  logStep(type);
   $<HTMLParagraphElement>('.toast').textContent = '';
   renderExpr();
+
+  const merged = mergeRoundPrefix(play.expr);
+  if (!merged) return;
+  // let the move land first, then fold the round prefix into one tile so she sees `40 + 5`
+  play.busy = true;
+  setTimeout(() => {
+    play.busy = false;
+    if (play.done) return;
+    play.expr = merged;
+    logStep('merge');
+    renderExpr();
+    const tile = $<HTMLElement>('.tile.made');
+    replayAnimation(tile, 'merge-pop');
+    sparkle(tile, 10);
+  }, MERGE_DELAY_MS);
 }
 
 function rejected(reason: OpError, tileId: string | null): void {
@@ -251,52 +308,62 @@ function rejected(reason: OpError, tileId: string | null): void {
 
 function onExprClick(e: MouseEvent): void {
   e.stopPropagation();
-  if (play.done) return;
+  if (play.done || play.busy) return;
   const target = e.target as HTMLElement;
   const tile = target.closest<HTMLElement>('.tile');
   const gapEl = target.closest<HTMLElement>('.gap.active');
   if (tile) {
     const id = tile.dataset.id!;
-    if (play.selected === id) openSplitPicker(id);
+    if (play.selected === id) openActions(id);
     else select(id);
   } else if (gapEl && play.selected) {
-    const from = play.expr.findIndex((t) => t.id === play.selected);
-    const r = move(play.expr, from, Number(gapEl.dataset.gap));
-    if (r.ok) apply(r.expr, 'move');
-    else rejected(r.reason, play.selected);
+    const id = play.selected;
+    const from = play.expr.findIndex((t) => t.id === id);
+    apply(move(play.expr, from, Number(gapEl.dataset.gap)), 'move', id);
   } else if (play.selected) {
     select(null);
   }
 }
 
-function openSplitPicker(id: string): void {
+/** Second tap on a selected tile: split it, or round it when it sits just below a ten. */
+function openActions(id: string): void {
   const i = play.expr.findIndex((t) => t.id === id);
   const term = play.expr[i];
+  if (term.made) return rejected('locked', id);
   const options = splitOptions(term.value);
-  if (!options.length) return rejected('cannot-split', id);
-  if (split(play.expr, i, 1).ok === false) return rejected('too-many-terms', id);
+  const rounding = roundOption(term.value);
+  if (!options.length && !rounding) return rejected('cannot-split', id);
+  if (play.expr.length >= MAX_TERMS) return rejected('too-many-terms', id);
 
   const backdrop = el('div', 'picker');
   const sheet = el('div', 'sheet');
-  const grid = el('div', 'split-grid');
-  grid.dir = 'ltr';
-  const sign = term.sign < 0 ? '−' : '+';
-  for (const [a, b] of options) {
-    const label = term.sign < 0 ? `−${a} − ${b}` : `${a} ${sign} ${b}`;
-    grid.append(
-      button('split-opt', label, () => {
-        backdrop.remove();
-        const r = split(play.expr, i, a);
-        if (r.ok) apply(r.expr, 'split');
-        else rejected(r.reason, id);
-      }),
-    );
-  }
   const close = () => {
     backdrop.remove();
     select(null);
   };
-  sheet.append(el('p', 'sheet-title', `לפרק את ${term.value} ל־`), grid, button('tool', 'ביטול', close));
+  const choose = (r: () => OpResult, type: 'split' | 'round') => () => {
+    backdrop.remove();
+    apply(r(), type, id);
+  };
+  const neg = term.sign < 0;
+  sheet.append(el('p', 'sheet-title', `מה עושים עם ${term.value}?`));
+
+  if (options.length) {
+    const grid = el('div', 'split-grid');
+    grid.dir = 'ltr';
+    for (const [a, b] of options) {
+      const label = neg ? `−${a} − ${b}` : `${a} + ${b}`;
+      grid.append(button('split-opt', label, choose(() => split(play.expr, i, a), 'split')));
+    }
+    sheet.append(el('p', 'sheet-label', 'לפרק'), grid);
+  }
+  if (rounding) {
+    const label = neg ? `−${rounding.up} + ${rounding.fix}` : `${rounding.up} − ${rounding.fix}`;
+    const opt = button('split-opt round-opt', label, choose(() => round(play.expr, i), 'round'));
+    opt.dir = 'ltr';
+    sheet.append(el('p', 'sheet-label', 'לעגל לעשרת'), opt);
+  }
+  sheet.append(button('tool', 'ביטול', close));
   backdrop.append(sheet);
   backdrop.addEventListener('click', (e) => e.target === backdrop && close());
   $<HTMLElement>('.screen').append(backdrop);
@@ -304,26 +371,40 @@ function openSplitPicker(id: string): void {
 
 function undo(): void {
   const prev = play.history.pop();
-  if (!prev || play.done) return;
+  if (!prev || play.done || play.busy) return;
   play.expr = prev;
   play.selected = null;
-  play.log.steps.push({ type: 'undo', expr: format(prev) });
+  logStep('undo');
   renderExpr();
 }
 
 function reset(): void {
-  if (play.done || sameShape(play.expr, play.original)) return;
+  if (play.done || play.busy || sameShape(play.expr, play.original)) return;
   play.history.push(play.expr);
   play.expr = play.original;
   play.selected = null;
-  play.log.steps.push({ type: 'reset', expr: format(play.original) });
+  logStep('reset');
   renderExpr();
+}
+
+function onClaim(): void {
+  if (play.done || play.busy) return;
+  logStep('no-shortcut');
+  const reply = claimNoShortcut(play.problem.tag, Boolean(play.problem.hint), play.claims++);
+  if (reply === 'nudge') {
+    toast('יש פה עשרת מוסתרת, נסי למצוא אותה 🔍');
+    replayAnimation($<HTMLDivElement>('.expr'), 'wobble');
+    return;
+  }
+  play.unlocked = true;
+  $<HTMLParagraphElement>('.toast').textContent = '';
+  updateGate();
 }
 
 // ---------- answering ----------
 
 function onKey(k: string): void {
-  if (play.done) return;
+  if (play.done || play.busy) return;
   if (k === '⌫') play.input = play.input.slice(0, -1);
   else if (k === '✓') return submit();
   else if (play.input.length < 3) play.input = play.input === '0' ? k : play.input + k;
@@ -356,9 +437,9 @@ function submit(): void {
 
   const message = !smart
     ? 'נכון! כל הכבוד'
-    : play.problem.tag === 'none'
-      ? 'מעולה! ראית שאין פה קיצור'
-      : 'וואו! מצאת דרך חכמה!';
+    : madeShortcut(play.expr)
+      ? 'וואו! מצאת דרך חכמה!'
+      : 'מעולה! ראית שאין פה קיצור';
   finish(out.stars, smart, answer, message);
 }
 
@@ -376,7 +457,6 @@ function finish(stars: number, smart: boolean, answer: number | null, message: s
   recordProblem(session, play.log);
 
   renderExpr();
-  $<HTMLDivElement>('.keypad').classList.add('hidden');
   $<HTMLParagraphElement>('.toast').textContent = '';
   $<HTMLDivElement>('.star-count').textContent = `⭐ ${totalStars}`;
 

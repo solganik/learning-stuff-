@@ -11,14 +11,15 @@ function sessionTable(s: Session): HTMLElement {
   const box = el('section', 'p-session');
   const stars = s.problems.reduce((n, p) => n + p.stars, 0);
   const smart = s.problems.filter((p) => p.smart && !p.revealed).length;
-  const transformed = s.problems.filter((p) => p.steps.length > 0).length;
+  const transformed = s.problems.filter((p) => p.steps.some((m) => m.type !== 'no-shortcut')).length;
+  const claims = s.problems.filter((p) => p.steps.some((m) => m.type === 'no-shortcut')).length;
   const secs = s.problems.reduce((n, p) => n + p.seconds, 0);
   box.append(
     el('h3', '', new Date(s.startedAt).toLocaleString('he-IL')),
     el(
       'p',
       'p-summary',
-      `${s.problems.length} תרגילים · ${stars}⭐ · חכם ${smart} · שינתה ביטוי ב־${transformed} · ${Math.round(secs / 60)} דק׳`,
+      `${s.problems.length} תרגילים · ${stars}⭐ · חכם ${smart} · שינתה ביטוי ב־${transformed} · "אין קיצור" ב־${claims} · ${Math.round(secs / 60)} דק׳`,
     ),
   );
   const table = el('table');
