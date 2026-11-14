@@ -31,15 +31,27 @@ import {
 
 const NS = 'http://www.w3.org/2000/svg';
 const W = 320;
-const C = { ink: '#4a2361', pink: '#ff5fa2', soft: '#ffd6ec', purple: '#8e5cf7', lilac: '#ede4ff', teal: '#1fb6a6', gold: '#ffc531' };
-const BAR_FILLS = ['#ffd6ec', '#e3d6ff', '#cff3ee', '#fff0bf'];
+/** Palette reads CSS variables (set in style.css, overridden in dark mode) so the drawings stay legible on any theme. */
+const C = { ink: 'var(--v-ink)', pink: 'var(--v-pink)', soft: 'var(--v-soft)', purple: 'var(--v-purple)', lilac: 'var(--v-lilac)', teal: 'var(--v-teal)', gold: 'var(--v-gold)' };
+const FACE = 'var(--v-face)';
+const BAR_FILLS = ['var(--v-bar-0)', 'var(--v-bar-1)', 'var(--v-bar-2)', 'var(--v-bar-3)'];
 
 type Attrs = Record<string, string | number>;
 type Of<K extends Visual['kind']> = Extract<Visual, { kind: K }>;
 
 function svgEl<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Attrs = {}, text = ''): SVGElementTagNameMap[K] {
   const node = document.createElementNS(NS, tag);
-  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, String(v));
+  let style = '';
+  for (const [k, v] of Object.entries(attrs)) {
+    // CSS custom properties work in inline style but not in presentation attributes, so route
+    // var()-based fill/stroke through style. Other attributes are set normally.
+    if ((k === 'fill' || k === 'stroke') && typeof v === 'string' && v.startsWith('var(')) {
+      style += `${k}:${v};`;
+    } else {
+      node.setAttribute(k, String(v));
+    }
+  }
+  if (style) node.setAttribute('style', style);
   if (text) node.textContent = text;
   return node;
 }
@@ -151,7 +163,7 @@ function barDraw(v: Of<'bar'>, live: boolean): BarDraw {
         width: w - 2,
         height: rowH,
         rx: 7,
-        fill: open ? '#fff' : BAR_FILLS[j % BAR_FILLS.length],
+        fill: open ? FACE : BAR_FILLS[j % BAR_FILLS.length],
         stroke: s.label === '?' ? C.pink : C.purple,
         'stroke-width': 2,
         'stroke-dasharray': open ? '5 4' : '',
@@ -418,7 +430,7 @@ function chainDraw(v: Of<'chain'>) {
   v.items.forEach((it, i) => {
     const x = cx(i) - bw / 2;
     svg.append(
-      svgEl('rect', { x, y: by, width: bw, height: 36, rx: 8, fill: it === '?' ? '#fff' : C.lilac, stroke: it === '?' ? C.pink : C.purple, 'stroke-width': 2, 'stroke-dasharray': it === '?' ? '5 4' : '' }),
+      svgEl('rect', { x, y: by, width: bw, height: 36, rx: 8, fill: it === '?' ? FACE : C.lilac, stroke: it === '?' ? C.pink : C.purple, 'stroke-width': 2, 'stroke-dasharray': it === '?' ? '5 4' : '' }),
       label(cx(i), by + 18, it, { size: it.length > 2 ? 13 : 15 }),
     );
   });
@@ -538,7 +550,7 @@ function groups(v: Groups, keep?: VisKeep): Element {
     const unknown = v.per === null;
     const g = svgEl('g', { class: 'grp' });
     g.append(
-      svgEl('circle', { cx, cy, r, class: 'grp-ring', fill: unknown ? '#fff' : C.lilac, stroke: unknown ? C.pink : C.purple, 'stroke-width': 2, 'stroke-dasharray': unknown ? '5 4' : '' }),
+      svgEl('circle', { cx, cy, r, class: 'grp-ring', fill: unknown ? FACE : C.lilac, stroke: unknown ? C.pink : C.purple, 'stroke-width': 2, 'stroke-dasharray': unknown ? '5 4' : '' }),
     );
     if (dots) dotGrid(g, cx, cy, v.per!, Math.min(cols, v.per!), step, step > 8 ? 3.6 : 3, C.ink);
     else g.append(label(cx, cy, unknown ? '?' : (v.inner ?? String(v.per)), { size: unknown ? 18 : 14 }));
@@ -689,7 +701,7 @@ const polar = (cx: number, cy: number, r: number, deg: number): [number, number]
 };
 
 function dial(svg: SVGSVGElement, cx: number, cy: number, r: number): void {
-  svg.append(svgEl('circle', { cx, cy, r, fill: '#fff', stroke: C.purple, 'stroke-width': 3 }));
+  svg.append(svgEl('circle', { cx, cy, r, fill: FACE, stroke: C.purple, 'stroke-width': 3 }));
   for (let h = 1; h <= 12; h++) {
     const [x, y] = polar(cx, cy, r - 13, h * 30);
     svg.append(label(x, y, String(h), { size: 13, weight: 700 }));
@@ -771,7 +783,7 @@ function clockLive(v: Of<'clock'>, keep: VisKeep): HTMLElement {
     tokens.replaceChildren(
       ...(v.target ? keep.clock! : []).map((m) => {
         const t = svgEl('svg', { viewBox: '0 0 22 22', width: 22, height: 22, class: 'token' });
-        t.append(svgEl('circle', { cx: 11, cy: 11, r: 9, fill: '#fff', stroke: C.teal, 'stroke-width': 1.5 }), pie(11, 11, 9, m));
+        t.append(svgEl('circle', { cx: 11, cy: 11, r: 9, fill: FACE, stroke: C.teal, 'stroke-width': 1.5 }), pie(11, 11, 9, m));
         return t;
       }),
     );

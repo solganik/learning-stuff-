@@ -5,6 +5,7 @@ import { officialExam } from './officialBank';
 import { printMockExam } from './print';
 import { saveExam, type ExamRecord } from '../log';
 import { openParentScreen } from '../parent';
+import { themeToggleButton } from '../theme';
 import type { Hint, VisKeep } from './hints';
 import { renderVisual } from './visual';
 
@@ -85,7 +86,7 @@ function mathLines(lines: string[], cls = 'q-lines'): HTMLElement {
 }
 const plain = (s: string) => s.replace(/[⁦⁩]/g, '');
 
-function topBar(title: string, back: (() => void) | null, right = ''): HTMLElement {
+function topBar(title: string, back: (() => void) | null, right = '', withTheme = false): HTMLElement {
   const top = el('header', 'top');
   const t = el('h1', 'title', title);
   let timer = 0;
@@ -94,6 +95,7 @@ function topBar(title: string, back: (() => void) | null, right = ''): HTMLEleme
   t.addEventListener('contextmenu', (e) => e.preventDefault());
   top.append(t);
   if (right) top.append(el('div', 'progress', right));
+  if (withTheme) top.append(themeToggleButton());
   if (back) top.append(button('back-btn', 'חזרה', back));
   return top;
 }
@@ -116,7 +118,7 @@ export function renderExamHome(root: HTMLElement, home: () => void): void {
   stopTimer();
   run = null;
   const screen = el('main', 'screen exam-home');
-  screen.append(topBar('הכנה למבחן', home));
+  screen.append(topBar('הכנה למבחן', home, '', true));
 
   screen.append(el('h2', 'sec-title', '⏱️ מבחן לדוגמה'));
   const exams = el('div', 'menu');

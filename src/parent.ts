@@ -1,5 +1,6 @@
 import { clearExams, clearSessions, loadExams, loadSessions, type ExamRecord, type Session } from './log';
 import { TYPE_NAMES, type QType } from './exam/questions';
+import { themeToggleButton } from './theme';
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
@@ -150,7 +151,7 @@ export function openParentScreen(): void {
   };
 
   const bar = el('div', 'p-bar');
-  bar.append(el('h2', '', 'יומן הורים'), copy, clear, close, status);
+  bar.append(el('h2', '', 'יומן הורים'), themeToggleButton(), copy, clear, close, status);
   overlay.append(bar);
   if (!sessions.length && !exams.length) overlay.append(el('p', '', 'אין עדיין נתונים.'));
   if (exams.length) overlay.append(examSection(exams));

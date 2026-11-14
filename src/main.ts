@@ -22,6 +22,7 @@ import { PLAYER_NAME, REWARD_TEXT, SMART_FOR_REWARD } from './config';
 import { recordProblem, startSession, type ProblemLog, type Session, type StepRecord } from './log';
 import { openParentScreen } from './parent';
 import { renderExamHome } from './exam/ui';
+import { initTheme } from './theme';
 
 type Play = {
   problem: Problem;
@@ -549,5 +550,6 @@ function sparkle(anchor: HTMLElement, count: number): void {
   }
 }
 
+initTheme();
 if (location.hash === '#parent') openParentScreen();
 renderStart();
