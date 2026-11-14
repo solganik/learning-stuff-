@@ -25,7 +25,7 @@ const makeRoot = () => {
 };
 
 let store: Record<string, string> = {};
-let mq: MediaQueryList;
+let mq: { matches: boolean };
 
 beforeEach(() => {
   store = {};
@@ -43,7 +43,7 @@ beforeEach(() => {
       store = {};
     },
   });
-  mq = { matches: false } as MediaQueryList;
+  mq = { matches: false };
   vi.stubGlobal('matchMedia', () => mq);
 });
 

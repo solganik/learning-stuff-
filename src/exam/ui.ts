@@ -1,7 +1,7 @@
 import { isOpen, isRight, mathExam, mathPractice, TYPE_NAMES, type MathType, type Question } from './questions';
 import { PASSAGES, passageById, passageQuestions, readingExam } from './reading';
 import { bankQuestions } from './bank';
-import { officialExam } from './officialBank';
+import { officialExam, officialExam2 } from './officialBank';
 import { printMockExam } from './print';
 import { saveExam, type ExamRecord } from '../log';
 import { openParentScreen } from '../parent';
@@ -132,6 +132,15 @@ export function renderExamHome(root: HTMLElement, home: () => void): void {
     button('menu-btn big-btn', `🏛️ מבחן רשמי לדוגמה · ${2 * SECTION_MINUTES} דקות`, () =>
       startRun('exam', 'מבחן רשמי לדוגמה', (seed) => {
         const { math, reading } = officialExam(seed);
+        return [
+          { title: 'חלק 1: הבנת הנקרא', questions: reading, minutes: SECTION_MINUTES },
+          { title: 'חלק 2: חשבון', questions: math, minutes: SECTION_MINUTES },
+        ];
+      }),
+    ),
+    button('menu-btn big-btn', `🏛️ מבחן רשמי לדוגמה ב׳ · ${2 * SECTION_MINUTES} דקות`, () =>
+      startRun('exam', 'מבחן רשמי לדוגמה ב׳', (seed) => {
+        const { math, reading } = officialExam2(seed);
         return [
           { title: 'חלק 1: הבנת הנקרא', questions: reading, minutes: SECTION_MINUTES },
           { title: 'חלק 2: חשבון', questions: math, minutes: SECTION_MINUTES },
