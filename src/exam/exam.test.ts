@@ -149,8 +149,8 @@ describe.each(TYPES)('%s generator', (type) => {
 });
 
 describe('variety', () => {
-  it('missing number and inequality are sometimes open questions', () => {
-    for (const t of ['missing', 'inequality'] as const) {
+  it('missing number, inequality and arith are sometimes open questions', () => {
+    for (const t of ['missing', 'inequality', 'arith'] as const) {
       const qs = SEEDS.map((s) => MATH_GENERATORS[t](rng(s)));
       const open = qs.filter((q) => q.accept).length / qs.length;
       expect(open).toBeGreaterThan(0.15);

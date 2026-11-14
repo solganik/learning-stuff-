@@ -149,10 +149,12 @@ function tensTo100(x: number): Hint['visual'] {
 }
 
 function arith(r: Rng): Question {
-  const kind = pick(r, ['add10', 'sub10', 'add2', 'sub2', 'mul', 'div', 'mul10', 'hundred', 'chain'] as const);
+  const kind = pick(r, ['add10', 'sub10', 'add2', 'sub2', 'mul', 'div', 'mul10', 'hundred', 'chain', 'mulAdd'] as const);
+  const openQ = r() < 0.25;
   const q = (line: string, answer: number, wrongs: Wrong[], explain: string, hint?: Hint): Question => {
     const base: Question = { type: 'arith', prompt: 'כמה זה?', lines: [`${line} = ?`], explain, ...numberChoice(r, answer, wrongs) };
-    return hint ? withHint(base, hint) : base;
+    const withOpen = openQ ? { ...base, ...open(answer) } : base;
+    return hint ? withHint(withOpen, hint) : withOpen;
   };
 
   if (kind === 'add10') {
@@ -280,6 +282,18 @@ function arith(r: Rng): Question {
           visual: tensTo100(x),
         };
     return q(`100 − ${x}`, ans, [[slip, TRAP.digits], ans + 10, ans - 1, ans + 1], explain, hint);
+  }
+  if (kind === 'mulAdd') {
+    const f = int(r, 2, 9);
+    const k = int(r, 2, 9);
+    const c = int(r, 3, 20);
+    const ans = f * k + c;
+    return q(`${f} × ${k} + ${c}`, ans, [[f * k, TRAP.step], [f + k + c, TRAP.wrongOp], ans + 1, ans - 1],
+      `קודם כפל: ${L(`${f} × ${k} = ${f * k}`)}, ואז חיבור: ${L(`${f * k} + ${c} = ${ans}`)}`, {
+        ask: 'קודם כפל, ואז חיבור. כפל תמיד לפני חיבור!',
+        steps: [{ text: `${f} × ${k} = ⬜`, answer: f * k }],
+        after: `ועכשיו עוד ${L(c)} 😉`,
+      });
   }
   if (kind === 'chain') {
     const a = int(r, 20, 60);
