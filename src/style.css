@@ -1272,3 +1272,17 @@ mark.hl {
   opacity: 0.55;
   animation: shake 0.4s;
 }
+
+.approach {
+  margin-top: 6px;
+  background: #fffdf3;
+  border: 2px solid #ffe9a3;
+  border-radius: 14px;
+  padding: 6px 10px;
+}
+
+.approach summary {
+  font-weight: 800;
+  color: var(--purple);
+  cursor: pointer;
+}

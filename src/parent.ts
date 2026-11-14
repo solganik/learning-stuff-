@@ -11,23 +11,35 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''):
 function examSection(exams: ExamRecord[]): HTMLElement {
   const box = el('section', 'p-session');
   box.append(el('h3', '', 'הכנה למבחן: דיוק לפי סוג שאלה (כל הזמן)'));
-  const byType = new Map<string, { ok: number; n: number; secs: number }>();
+  type Stat = { ok: number; n: number; secs: number; hinted: number; hints: number; hintedOk: number; withLog: number };
+  const byType = new Map<string, Stat>();
   for (const e of exams)
     for (const x of e.items) {
-      const v = byType.get(x.type) ?? { ok: 0, n: 0, secs: 0 };
+      const v = byType.get(x.type) ?? { ok: 0, n: 0, secs: 0, hinted: 0, hints: 0, hintedOk: 0, withLog: 0 };
       v.n++;
       v.secs += x.seconds;
       if (x.ok) v.ok++;
+      // hint use is logged for practice only (and not in logs from before hints)
+      if (x.hintsUsed !== undefined) {
+        v.withLog++;
+        v.hints += x.hintsUsed;
+        if (x.hintsUsed > 0) {
+          v.hinted++;
+          if (x.ok) v.hintedOk++;
+        }
+      }
       byType.set(x.type, v);
     }
   const t1 = el('table');
   const h1 = el('tr');
-  for (const h of ['סוג', 'נכונות', 'אחוז', 'שנ׳ לשאלה']) h1.append(el('th', '', h));
+  for (const h of ['סוג', 'נכונות', 'אחוז', 'שנ׳ לשאלה', '💡 לשאלה', 'נכון אחרי רמז']) h1.append(el('th', '', h));
   t1.append(h1);
   // weakest first, so the parent sees what to practise next
   for (const [type, v] of [...byType].sort((a, b) => a[1].ok / a[1].n - b[1].ok / b[1].n)) {
     const row = el('tr');
-    for (const c of [TYPE_NAMES[type as QType] ?? type, `${v.ok}/${v.n}`, `${Math.round((100 * v.ok) / v.n)}%`, String(Math.round(v.secs / v.n))])
+    const avgHints = v.withLog ? (v.hints / v.withLog).toFixed(1) : '—';
+    const afterHint = v.hinted ? `${Math.round((100 * v.hintedOk) / v.hinted)}% (${v.hintedOk}/${v.hinted})` : '—';
+    for (const c of [TYPE_NAMES[type as QType] ?? type, `${v.ok}/${v.n}`, `${Math.round((100 * v.ok) / v.n)}%`, String(Math.round(v.secs / v.n)), avgHints, afterHint])
       row.append(el('td', '', c));
     t1.append(row);
   }

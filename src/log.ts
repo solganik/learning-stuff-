@@ -51,6 +51,10 @@ export type ExamItem = {
   correct: number;
   ok: boolean;
   seconds: number;
+  /** Practice only (missing in exams and in logs from before hints): 💡 rungs opened, 0–3. */
+  hintsUsed?: number;
+  /** Practice only: 1, or 2 when she got a second try after a wrong answer. */
+  tries?: number;
 };
 
 export type ExamRecord = {

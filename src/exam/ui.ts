@@ -386,8 +386,7 @@ function renderHint(q: Question, st: HintState, prompt: HTMLElement): HTMLElemen
     part.append(el('p', 'h-title', RUNG_TITLE[rung]));
     if (rung === 'ask') part.append(rich('p', 'h-text', h.ask));
     if (rung === 'visual') {
-      const svg = renderVisual(h.visual!);
-      if (svg) part.append(svg);
+      part.append(renderVisual(h.visual!));
     }
     if (rung === 'steps') {
       const steps = h.steps ?? [];
@@ -597,6 +596,15 @@ function endSection(): void {
 
 // ---------- results ----------
 
+/** Exam review: how to approach a question she got wrong (the hint's question and drawing, not its steps). */
+function approach(h: Hint): HTMLElement {
+  const box = el('details', 'approach');
+  box.append(el('summary', '', 'איך ניגשים? 📖'));
+  box.append(rich('p', 'h-text', h.ask));
+  if (h.visual) box.append(renderVisual(h.visual));
+  return box;
+}
+
 const answerText = (q: Question, a: number | null): string =>
   a === null ? 'לא סימנת' : isOpen(q) ? String(a) : `${LETTERS[a]}. ${q.options[a]}`;
 const correctText = (q: Question): string =>
@@ -613,6 +621,7 @@ function finishRun(): void {
       correct: isOpen(q) ? q.value! : q.correct,
       ok: isRight(q, r.answers[s][i]),
       seconds: r.secs[s][i],
+      ...(r.mode === 'practice' ? { hintsUsed: r.hints[s][i].level, tries: r.firstWrong[s][i] === null ? 1 : 2 } : {}),
     })),
   );
   const rec: ExamRecord = {
@@ -678,6 +687,7 @@ function finishRun(): void {
       const trap = !ok && !isOpen(q) && chosen !== null ? q.traps?.[chosen] : '';
       if (trap) box.append(el('p', 'fb-trap', `⚠️ ${trap}`));
       box.append(rich('p', 'fb-explain', `💡 ${q.explain}`));
+      if (!ok && q.hint && r.mode === 'exam') box.append(approach(q.hint));
       screen.append(box);
     }),
   );
