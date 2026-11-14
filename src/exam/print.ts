@@ -1,4 +1,4 @@
-import { mathExam, type Question } from './questions';
+import { isOpen, mathExam, type Question } from './questions';
 import { passageById, readingExam } from './reading';
 
 const LETTERS = ['א', 'ב', 'ג', 'ד'];
@@ -18,6 +18,10 @@ function printQuestion(q: Question, n: number): HTMLElement {
     lines.dir = 'ltr';
     for (const l of q.lines) lines.append(el('div', '', l));
     box.append(lines);
+  }
+  if (isOpen(q)) {
+    box.append(el('p', 'pq-open', 'תשובה: ____________'));
+    return box;
   }
   const opts = el('div', 'pq-opts');
   q.options.forEach((o, k) => {
@@ -47,7 +51,10 @@ export function printMockExam(seed: number): void {
       const p = passageById(lastPassage)!;
       const box = el('div', 'p-passage');
       box.append(el('h3', '', p.title));
-      p.paragraphs.forEach((t, n) => box.append(el('p', '', `(${n + 1}) ${t}`)));
+      if (p.lines) {
+        let n = 0;
+        for (const line of p.lines) box.append(line ? el('div', 'p-line', `${++n}  ${line}`) : el('div', 'p-gap'));
+      } else p.paragraphs!.forEach((t, n) => box.append(el('p', '', `(${n + 1}) ${t}`)));
       sheet.append(box);
     }
     sheet.append(printQuestion(q, i + 1));
@@ -63,7 +70,10 @@ export function printMockExam(seed: number): void {
   const row = (title: string, qs: Question[]) => {
     key.append(el('h3', '', title));
     const ol = el('ol');
-    for (const q of qs) ol.append(el('li', '', `${LETTERS[q.correct]}  ·  ${q.explain.replace(/[⁦⁩]/g, '')}`));
+    for (const q of qs) {
+      const ans = isOpen(q) ? String(q.value) : LETTERS[q.correct];
+      ol.append(el('li', '', `${ans}  ·  ${q.explain.replace(/[⁦⁩]/g, '')}`));
+    }
     key.append(ol);
   };
   row('הבנת הנקרא', reading);

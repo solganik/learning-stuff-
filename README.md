@@ -42,21 +42,26 @@ session; if the computer's IP changes, the phone sees a fresh, empty log.
 
 ## Exam prep (מבחן מחוננים שלב א, grade 2)
 
-Start screen → "📝 הכנה למבחן". Modelled on the public sample tests: two sections of ~15 multiple-choice
-questions, 20 minutes each, reading comprehension and math.
+Start screen → "📝 הכנה למבחן". Based on `/Users/sashas/Documents/gifted-test-prep/` (HANDOVER.md, study guide).
+The commercial catalogs there are used only as style references; all content here is original or from the
+study guide.
 
-- **Mock exam**: full (reading then math), or one section. Each section has a hidden 20-minute limit, like the
-  real test (the teacher doesn't announce time left). Navigate freely, mark ⭐ to come back, and finishing
-  with blank answers prompts her to guess (no penalty for wrong answers).
-- **Practice by topic**: 10 questions with immediate feedback and the smart way to solve it.
-- **Math types** (`src/exam/questions.ts`, generated, seeded): quick arithmetic within 100 incl. simple × and
-  : (division), missing number with 😊, picture equations, word problems (change, scaling, groups, sharing,
-  two-step, ages, position in a line), "which exercise is biggest", sequences. Wrong options are typical
-  mistakes (forgot the carry, wrong operation, off by one).
-- **Reading** (`src/exam/reading.ts`): 3 original passages, 6 questions each (word meaning, detail, "which is
-  NOT", inference, paragraph topic, title). The mock uses 2 passages.
-- **Print**: "🖨️ הדפסת מבחן לדוגמה" prints a paper mock with an answer key on the last page.
-- **Parent screen** now shows accuracy per question type and every exam/practice run.
+- **Mock exam**: full (reading then math), or one section, 20 minutes each with a hidden limit (the teacher
+  doesn't announce time left). Navigate freely, mark ⭐ to come back; finishing with blanks prompts her to guess.
+- **Practice by topic**: 10 fresh questions per round, instant feedback, the smart way to solve it, and when
+  she picks a typical-mistake option, the trap is named ("זו תוצאה של שלב ביניים").
+- **Math generators** (`src/exam/questions.ts`, seeded, unlimited): T1 arithmetic (± with carrying, ×, ÷, ×10,
+  100 − x, chains), T2/T4 missing number with ⬜ or 😊, T3 inequalities, T5 picture puzzles (incl. repeated
+  groups), T6 missing digit (☀), T7 multi-step word problems (12 templates), T8 proportion, T9 time,
+  T10 sequences (+k, alternating, ×2, growing/shrinking differences, two interleaved series), comparisons.
+  Missing-number and inequality questions are sometimes open (she types the number; any valid answer counts).
+- **Study-guide bank** (`src/exam/bank.ts`): questions 1–25 from the guide.
+- **Reading** (`src/exam/reading.ts`): 8 passages, 48 questions: 3 with numbered paragraphs, 5 with numbered
+  lines like the real test (the guide's hedgehog + dolphins, sea turtles, Hanukkah, a new girl in class).
+  Covers detail, synonym in context, "what is NOT said", paragraph topic, title, inference, "all correct".
+- **Print**: a paper mock with an answer key on the last page.
+- **Parent screen**: accuracy per question type, weakest first, plus every exam/practice run.
 
-Tests (`src/exam/exam.test.ts`) check 400 generated questions per type against an answer worked out
-independently from the question text.
+Tests (`src/exam/exam.test.ts`): 400 questions per generator; each is checked against an answer worked out
+independently from the question text, and for multiple choice exactly one option may be valid. Reading tests
+check that every quoted word/phrase really appears in the line the question cites.

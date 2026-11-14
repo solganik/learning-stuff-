@@ -24,7 +24,8 @@ function examSection(exams: ExamRecord[]): HTMLElement {
   const h1 = el('tr');
   for (const h of ['סוג', 'נכונות', 'אחוז', 'שנ׳ לשאלה']) h1.append(el('th', '', h));
   t1.append(h1);
-  for (const [type, v] of byType) {
+  // weakest first, so the parent sees what to practise next
+  for (const [type, v] of [...byType].sort((a, b) => a[1].ok / a[1].n - b[1].ok / b[1].n)) {
     const row = el('tr');
     for (const c of [TYPE_NAMES[type as QType] ?? type, `${v.ok}/${v.n}`, `${Math.round((100 * v.ok) / v.n)}%`, String(Math.round(v.secs / v.n))])
       row.append(el('td', '', c));

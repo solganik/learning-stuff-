@@ -1025,3 +1025,64 @@ button:disabled {
     font-size: 11pt;
   }
 }
+
+/* ---------- numbered lines, open answers, traps ---------- */
+
+.para.lines {
+  margin: 8px 0;
+}
+
+.line {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.line-num {
+  flex: none;
+  width: 22px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--purple);
+  text-align: center;
+}
+
+.open-answer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.fb-trap {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #b4005a;
+  background: #fff0f6;
+  border-radius: 12px;
+  padding: 6px 10px;
+}
+
+@media print {
+  .p-line {
+    line-height: 1.6;
+  }
+
+  .p-gap {
+    height: 8px;
+  }
+
+  .pq-open {
+    margin: 4px 0;
+  }
+}
+
+bdi.m {
+  white-space: nowrap;
+}
+
+.q-line.long {
+  font-size: 22px;
+  white-space: nowrap;
+}
