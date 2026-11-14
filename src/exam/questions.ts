@@ -236,7 +236,10 @@ function arith(r: Rng): Question {
     const x = int(r, 2, 12);
     const line = r() < 0.5 ? `${x} × 10` : `10 × ${x}`;
     return q(line, 10 * x, [[x + 10, TRAP.wrongOp], x * 100, 10 * x + 10, 10 * (x - 1)],
-      `כפול 10 מוסיפים אפס: ${L(`${x} × 10 = ${10 * x}`)}`);
+      `כפול 10 מוסיפים אפס: ${L(`${x} × 10 = ${10 * x}`)}`, {
+        ask: `כפול 10: כל יחידה הופכת לעשרת. ${L(x)} עשרות זה כמה?`,
+        visual: { kind: 'groups', n: x, per: 10, inner: '10', total: '?' },
+      });
   }
   if (kind === 'hundred') {
     const x = int(r, 11, 89);
@@ -280,11 +283,19 @@ function arith(r: Rng): Question {
       k <= 5
         ? `${L(`${k} × ${f}`)} זה ${L(String(k))} פעמים ${L(String(f))}: ${L(`${Array(k).fill(f).join(' + ')} = ${ans}`)}`
         : `${L(`5 × ${f} = ${5 * f}`)}, ועוד ${L(String(k - 5))} פעמים ${L(String(f))}: ${L(`${5 * f} + ${(k - 5) * f} = ${ans}`)}`;
-    return q(`${k} × ${f}`, ans, [[f + k, TRAP.wrongOp], ans + f, ans - f, ans + 1], explain);
+    return q(`${k} × ${f}`, ans, [[f + k, TRAP.wrongOp], ans + f, ans - f, ans + 1], explain, {
+      ask: `כפל זה קבוצות שוות: ${L(k)} קבוצות, ובכל קבוצה ${L(f)}.`,
+      visual: { kind: 'groups', n: k, per: f, total: '?' },
+      ...mulSteps(k, f),
+    });
   }
   const total = f * k;
   const explain = `חילוק זה כפל הפוך: כמה פעמים ${L(String(f))} נכנס ב־${L(String(total))}? ${L(`${k} × ${f} = ${total}`)}, אז ${L(`${total} ÷ ${f} = ${k}`)}`;
-  return q(`${total} ÷ ${f}`, k, [[total - f, TRAP.wrongOp], k + 1, k - 1, f], explain);
+  return q(`${total} ÷ ${f}`, k, [[total - f, TRAP.wrongOp], k + 1, k - 1, f], explain, {
+    ask: `כמה פעמים ${L(f)} נכנס ב־${L(total)}? או: ${L(f)} כפול מה נותן ${L(total)}?`,
+    visual: { kind: 'groups', n: f, per: null, loose: total, total: String(total), note: 'חלקי לקבוצות שוות' },
+    ...nearbyFact(f, k),
+  });
 }
 
 // ---------- T2 / T4 המספר החסר (⬜ or a smiley) ----------
@@ -397,6 +408,14 @@ function inequality(r: Rng): Question {
   const answer = needBigger ? b + step * int(r, 1, 3) : Math.max(step, b - step * int(r, 1, 3));
   const dir = needBigger ? -1 : 1;
   const flipTrap = kind === 'sub' ? TRAP.flip : '';
+  const equality =
+    kind === 'div' ? `⬜ ÷ ${k} = ${b} ÷ ${k}` : kind === 'mul' ? `${k} × ${b} = ${k} × ⬜` : `${a} ${kind === 'add' ? '+' : '−'} ${b} = ${a} ${kind === 'add' ? '+' : '−'} ⬜`;
+  const hint: Hint = {
+    ask: 'קודם מוצאים את המספר שנותן בדיוק שוויון. אחר כך: צריך יותר או פחות ממנו?',
+    visual: { kind: 'line', points: [{ v: 0, label: '=' }], jumps: [], answers: needBigger ? 'bigger' : 'smaller' },
+    steps: [{ text: equality, answer: b }],
+    after: kind === 'sub' ? `⚠️ ${TRAP.flip}` : `עכשיו בחרי מספר ${needBigger ? 'גדול' : 'קטן'} יותר 😉`,
+  };
   const base: Question = {
     type: 'inequality',
     prompt: 'איזה מספר מתאים במקום ⬜?',
@@ -407,13 +426,12 @@ function inequality(r: Rng): Question {
     }),
   };
   if (r() < 0.3) {
-    return {
-      ...base,
-      prompt: 'כתבי מספר שמתאים במקום ⬜ (יש כמה תשובות נכונות)',
-      ...open(answer, (x) => valid(x) && x <= (kind === 'sub' ? a : 120)),
-    };
+    return withHint(
+      { ...base, prompt: 'כתבי מספר שמתאים במקום ⬜ (יש כמה תשובות נכונות)', ...open(answer, (x) => valid(x) && x <= (kind === 'sub' ? a : 120)) },
+      hint,
+    );
   }
-  return base;
+  return withHint(base, hint);
 }
 
 // ---------- T5 חידות בציורים ----------
@@ -427,37 +445,52 @@ function pictures(r: Rng): Question {
     const a = int(r, 3, 12);
     const k = pick(r, [2, 3]);
     const b = int(r, 5, 30);
-    return {
+    return withHint({
       type: 'pictures',
       prompt: `כל ציור הוא מספר. כמה שווה ${p2}?`,
       lines: [`${Array(k).fill(p1).join(' + ')} = ${k * a}`, `${p2} + ${p1} = ${a + b}`],
       explain: `מתחילים מהשורה עם ציורים זהים: ${L(`${k * a} ÷ ${k} = ${a}`)}, אז ${p1} = ${L(String(a))}. ואז ${L(`${a + b} − ${a} = ${b}`)}, אז ${p2} = ${L(String(b))}`,
       ...numberChoice(r, b, [[a + b, TRAP.step], [a, TRAP.other], b + 1, b - 1]),
-    };
+    }, {
+      ask: `מתחילים מהשורה שיש בה רק ${p1}: ${L(k)} פעמים ${p1} שווים ${L(k * a)}.`,
+      steps: [{ lead: `${p1} =`, text: `${k * a} ÷ ${k} = ⬜`, answer: a }],
+      after: `עכשיו מציבים את ${p1} בשורה השנייה, ומוצאים את ${p2} 😉`,
+    });
   }
   if (variant === 'chain') {
     const a = int(r, 2, 10);
     const b = int(r, 3, 20);
     const c = int(r, 3, 20);
-    return {
+    return withHint({
       type: 'pictures',
       prompt: `כל ציור הוא מספר. כמה שווה ${p3}?`,
       lines: [`${p1} + ${p1} = ${2 * a}`, `${p1} + ${p2} = ${a + b}`, `${p2} + ${p3} = ${b + c}`],
       explain: `${p1} = ${L(String(a))}, אז ${p2} = ${L(`${a + b} − ${a} = ${b}`)}, ואז ${p3} = ${L(`${b + c} − ${b} = ${c}`)}`,
       ...numberChoice(r, c, [[b, TRAP.other], b + c - a, c + 1, c - 1]),
-    };
+    }, {
+      ask: `מתחילים מהשורה שיש בה רק סוג אחד של ציור, וממשיכים שורה אחרי שורה.`,
+      steps: [
+        { lead: `${p1} =`, text: `${2 * a} ÷ 2 = ⬜`, answer: a },
+        { lead: `${p2} =`, text: `${a + b} − ${a} = ⬜`, answer: b },
+      ],
+      after: `עכשיו השורה האחרונה: מוצאים את ${p3} 😉`,
+    });
   }
   // a repeated group: (p1 + p2) appears twice in the second line
   const s = int(r, 5, 20);
   const c = int(r, 3, 25);
   const t = 2 * s + c;
-  return {
+  return withHint({
     type: 'pictures',
     prompt: `כל ציור הוא מספר. כמה שווה ${p3}?`,
     lines: [`${p1} + ${p2} = ${s}`, `${p1} + ${p2} + ${p3} + ${p1} + ${p2} = ${t}`],
     explain: `בשורה השנייה ${L(`${p1} + ${p2}`)} מופיע פעמיים: ${L(`${s} + ${s} = ${2 * s}`)}. אז ${p3} = ${L(`${t} − ${2 * s} = ${c}`)}`,
     ...numberChoice(r, c, [[t - s, TRAP.step], [s, TRAP.other], c + 1, c - 1]),
-  };
+  }, {
+    ask: `אין שורה עם ציור אחד? חפשי זוג שחוזר: ${L(`${p1} + ${p2}`)} מופיע בשורה השנייה פעמיים!`,
+    steps: [{ lead: `${p1} + ${p2} + ${p1} + ${p2} =`, text: `${s} + ${s} = ⬜`, answer: 2 * s }],
+    after: `ועכשיו: כמה נשאר בשביל ${p3}? 😉`,
+  });
 }
 
 // ---------- T6 ספרה חסרה בתוך מספר ----------
@@ -469,14 +502,19 @@ function digit(r: Rng): Question {
   if (r() < 0.3) {
     const add = int(r, 2, Math.min(30, 120 - 11 * d));
     const total = 11 * d + add;
-    return {
+    const like = [22, 55, 77, 44].filter((n) => n % 10 !== d).slice(0, 2);
+    return withHint({
       type: 'digit',
       prompt: `${SUN} היא ספרה. איזו ספרה היא?`,
       lines: [`${SUN}${SUN} + ${add} = ${total}`],
       explain: `${L(`${SUN}${SUN} = ${total} − ${add} = ${11 * d}`)}, אז ${SUN} = ${L(String(d))}`,
       mathOptions: true,
       ...numberChoice(r, d, [d + 1, d - 1, d + 2, Math.floor(add / 10)], { max: 9 }),
-    };
+    }, {
+      ask: `${L(`${SUN}${SUN}`)} הוא מספר עם שתי ספרות זהות, כמו ${L(like[0])} או ${L(like[1])}. איזה מספר כזה ועוד ${L(add)} נותן ${L(total)}?`,
+      visual: { kind: 'column', top: `${SUN}${SUN}`, add: String(add), result: String(total) },
+      after: `אפשר לחשוב הפוך: ${L(`${total} − ${add}`)}. ואל תשכחי: התשובה היא ספרה אחת 😉`,
+    });
   }
   let a: number;
   let b: number;
@@ -489,14 +527,21 @@ function digit(r: Rng): Question {
   const n1 = `${SUN}${a}`;
   const n2 = `${b}${SUN}`;
   const line = unitsFirst ? `${n2} + ${n1} = ${total}` : `${n1} + ${n2} = ${total}`;
-  return {
+  const [top, bottom] = unitsFirst ? [n2, n1] : [n1, n2];
+  return withHint({
     type: 'digit',
     prompt: `${SUN} היא אותה ספרה בשני המקומות. איזו ספרה היא?`,
     lines: [line],
     explain: `פותרים קודם את האחדות: ${L(`${a} + ${SUN}`)} צריך להיגמר ב־${L(String(total % 10))}, אז ${SUN} = ${L(String(d))}. בדיקה: ${L(`${10 * d + a} + ${10 * b + d} = ${total}`)} ✓`,
     mathOptions: true,
     ...numberChoice(r, d, [d + 1, d - 1, b, a], { max: 9 }),
-  };
+  }, {
+    ask: a
+      ? `מסתכלים רק על עמודת האחדות: איזו ספרה ועוד ${L(a)} נגמרת ב־${L(total % 10)}?`
+      : `מסתכלים רק על עמודת האחדות: ${L(`0 + ${SUN}`)}. מה יוצא באחדות של התוצאה?`,
+    visual: { kind: 'column', top, add: bottom, result: String(total) },
+    after: 'נסי ספרות אחת־אחת, ואל תשכחי את העשרת שעוברת!',
+  });
 }
 
 // ---------- T7 שאלות מילוליות ----------
@@ -755,34 +800,62 @@ function proportion(r: Rng): Question {
   if (kind === 'weightToCount') {
     const w = pick(r, [100, 200]);
     const c = int(r, 3, 12);
-    return {
+    return withHint({
       type: 'proportion',
       prompt: `בחבילה של ${w} גרם יש ${c} עוגיות. כמה עוגיות יש בחבילה של ${w * f} גרם?`,
       explain: `${L(String(w * f))} זה פי ${L(String(f))} מ־${L(String(w))}, אז גם העוגיות פי ${L(String(f))}: ${L(`${c} × ${f} = ${c * f}`)}`,
       ...numberChoice(r, c * f, [[c + f, TRAP.add], c * (f + 1), c * f - c, c * f + 1]),
-    };
+    }, {
+      ask: `פי כמה החבילה הגדולה? כמה פעמים ${L(w)} גרם נכנס ב־${L(w * f)} גרם?`,
+      highlight: [`${w} גרם`, `${w * f} גרם`],
+      visual: {
+        kind: 'bar',
+        rows: [
+          { name: `${w} גרם`, segs: [{ v: c, label: String(c) }] },
+          { name: `${w * f} גרם`, segs: Array.from({ length: f }, () => ({ v: c, label: '?' })) },
+        ],
+      },
+      steps: [{ text: `${w} × ⬜ = ${w * f}`, answer: f }],
+      after: `החבילה גדולה פי ${L(f)}, אז גם העוגיות פי ${L(f)} 😉`,
+    });
   }
   if (kind === 'countToWeight') {
     const c1 = pick(r, [2, 4, 5]);
     const unit = pick(r, [10, 20]);
     const w1 = c1 * unit;
     const c2 = c1 * f;
-    return {
+    return withHint({
       type: 'proportion',
       prompt: `${c1} עוגיות שוקלות ${w1} גרם. כמה שוקלות ${c2} עוגיות?`,
       explain: `${L(String(c2))} זה פי ${L(String(f))} מ־${L(String(c1))}, אז גם המשקל: ${L(`${w1} × ${f} = ${w1 * f}`)}`,
       ...numberChoice(r, w1 * f, [[w1 + c2 - c1, TRAP.add], w1 * (f + 1), w1 * (f - 1), w1 * f + 10], { max: w1 * (f + 1) }),
-    };
+    }, {
+      ask: `${L(c2)} עוגיות זה פי כמה מ־${L(c1)} עוגיות?`,
+      visual: {
+        kind: 'bar',
+        rows: [
+          { name: `${c1} 🍪`, segs: [{ v: w1, label: `${w1}` }] },
+          { name: `${c2} 🍪`, segs: Array.from({ length: f }, () => ({ v: w1, label: '?' })) },
+        ],
+      },
+      steps: [{ text: `${c1} × ⬜ = ${c2}`, answer: f }],
+      after: `פי ${L(f)} עוגיות, אז גם המשקל פי ${L(f)} 😉`,
+    });
   }
   const k = int(r, 2, 4);
   const u = int(r, 2, 6);
   const many = pick(r, ['מחברות', 'מדבקות', 'עפרונות', 'בלונים']);
-  return {
+  return withHint({
     type: 'proportion',
     prompt: `${k} ${many} עולים ${k * u} ₪. כמה עולים ${k * f} ${many}?`,
     explain: `${L(String(k * f))} זה פי ${L(String(f))} מ־${L(String(k))}, אז גם המחיר: ${L(`${k * u} × ${f} = ${k * u * f}`)}`,
     ...numberChoice(r, k * u * f, [[k * u + k * f - k, TRAP.add], k * u * f + u, k * u * f - u, u * f]),
-  };
+  }, {
+    ask: `קודם מוצאים כמה עולה אחד: ${L(k)} ${many} עולים ${L(k * u)} ₪.`,
+    visual: { kind: 'groups', n: k, per: null, loose: k * u, total: String(k * u), note: `כמה ₪ לכל אחד?` },
+    steps: [{ text: `${k * u} ÷ ${k} = ⬜`, answer: u }],
+    after: `ועכשיו: כמה עולים ${L(k * f)} ${many}? 😉`,
+  });
 }
 
 // ---------- T9 זמן ----------
@@ -805,7 +878,29 @@ function time(r: Rng): Question {
     const dur = int(r, 2, 16) * 30;
     const end = start + dur;
     const hourOnly = (Math.floor(end / 60) - Math.floor(start / 60)) * 60;
-    return {
+    const hint: Hint = {
+      ask: `מה השעה ${g(p, 'כשיצא', 'כשיצאה')}? מה השעה ${g(p, 'כשחזר', 'כשחזרה')}? ${dur % 60 ? 'סופרים קודם שעות שלמות, ואז את חצי השעה.' : 'סופרים כמה שעות שלמות עברו.'}`,
+      visual: { kind: 'clock', faces: [{ t: start, caption: `יציאה ${clock(start)}` }, { t: end, caption: `חזרה ${clock(end)}` }] },
+    };
+    if (start % 60 === 30 && end % 60 === 0) {
+      const up = start + 30;
+      hint.steps = [
+        { text: `מ־${L(clock(start))} עד ${L(clock(up))} זה ⬜ דקות`, answer: 30 },
+        { text: `מ־${L(clock(up))} עד ${L(clock(end))} זה ⬜ שעות`, answer: (end - up) / 60 },
+      ];
+      hint.after = 'עכשיו חברי: השעות ועוד חצי השעה 😉';
+    } else if (start % 60 === 0 && end % 60 === 30) {
+      const down = end - 30;
+      hint.steps = [
+        { text: `מ־${L(clock(start))} עד ${L(clock(down))} זה ⬜ שעות`, answer: (down - start) / 60 },
+        { text: `מ־${L(clock(down))} עד ${L(clock(end))} זה ⬜ דקות`, answer: 30 },
+      ];
+      hint.after = 'עכשיו חברי: השעות ועוד חצי השעה 😉';
+    } else if (dur > 60) {
+      hint.steps = [{ text: `מ־${L(clock(start))} עד ${L(clock(start + 60))} זה ⬜ שעות`, answer: 1 }];
+      hint.after = `וכמה שעות כאלה יש עד ${L(clock(end))}? 😉`;
+    } else hint.after = 'סופרים: כמה סיבובים שלמים עושה המחוג הגדול? 😉';
+    return withHint({
       type: 'time',
       prompt: `${p.n} ${g(p, 'יצא', 'יצאה')} מהבית ב־${L(clock(start))} ${g(p, 'וחזר', 'וחזרה')} ב־${L(clock(end))}. כמה זמן ${g(p, 'הוא היה', 'היא הייתה')} מחוץ לבית?`,
       explain: `סופרים שעות שלמות ואז דקות: מ־${L(clock(start))} עד ${L(clock(end))} זה ${duration(dur)}`,
@@ -814,30 +909,61 @@ function time(r: Rng): Question {
         max: 9 * 60,
         fmt: duration,
       }),
-    };
+    }, hint);
   }
   if (kind === 'lesson') {
     const start = 8 * 60 + pick(r, [0, 15, 30]);
     const brk = pick(r, [15, 20, 30]);
     const ans = start + 45 + brk;
-    return {
+    const toHour = 60 - (start % 60);
+    return withHint({
       type: 'time',
       prompt: `השיעור מתחיל ב־${L(clock(start))} ונמשך 45 דקות. אחריו יש הפסקה של ${brk === 15 ? 'רבע שעה' : brk === 30 ? 'חצי שעה' : '20 דקות'}. מתי מתחיל השיעור הבא?`,
       mathOptions: true,
       explain: `השיעור נגמר ב־${L(clock(start + 45))}. ועוד ${L(String(brk))} דקות הפסקה: ${L(clock(ans))}`,
       ...numberChoice(r, ans, [[start + 45, 'זה סוף השיעור. שכחת את ההפסקה!'], ans + 15, ans - 15, start + 60 + brk], { fmt: clock, max: 24 * 60 }),
-    };
+    }, {
+      ask: `מה השעה בהתחלה? כמה זמן עובר עד השיעור הבא? (שיעור, ועוד הפסקה)`,
+      highlight: ['45 דקות', 'הפסקה'],
+      visual: {
+        kind: 'clock',
+        faces: [{ t: start, caption: `התחלה ${clock(start)}` }],
+        // only the lesson: an arc for the break would end on the answer
+        arcs: [{ from: start, min: 45, label: 'שיעור 45 דק׳', ring: 'minute' }],
+      },
+      steps: start % 60
+        ? [
+            { text: `45 + ${brk} = ⬜`, answer: 45 + brk },
+            { text: `מ־${L(clock(start))} עד ${L(clock(start + toHour))} זה ⬜ דקות`, answer: toHour },
+            { text: `${45 + brk} − ${toHour} = ⬜`, answer: 45 + brk - toHour },
+          ]
+        : [{ text: `45 + ${brk} = ⬜`, answer: 45 + brk }, ...(45 + brk > 60 ? [{ text: `${45 + brk} − 60 = ⬜`, answer: 45 + brk - 60 }] : [])],
+      after: start % 60
+        ? `ועכשיו: ${L(clock(start + toHour))} ועוד הדקות שנשארו 😉`
+        : `${L(60)} דקות זה שעה שלמה. ועכשיו: מתי זה? 😉`,
+    });
   }
   const start = int(r, 15, 19) * 60 + pick(r, [0, 30]);
   const dur = pick(r, [60, 90, 120, 150]);
   const ans = start + dur;
-  return {
+  const hours = Math.floor(dur / 60);
+  return withHint({
     type: 'time',
     prompt: `הסרט מתחיל ב־${L(clock(start))} ונמשך ${duration(dur)}. מתי הוא נגמר?`,
     mathOptions: true,
     explain: `${L(clock(start))} ועוד ${duration(dur)} = ${L(clock(ans))}`,
     ...numberChoice(r, ans, [ans + 30, ans - 30, ans + 60, start + 60], { fmt: clock, max: 24 * 60 }),
-  };
+  }, {
+    ask: `מה השעה בהתחלה? כמה זמן עובר? ${dur % 60 ? 'מוסיפים קודם את השעות השלמות, ואז את חצי השעה.' : 'מוסיפים את השעות.'}`,
+    // the whole hours as an arc only when a half hour is still left for her (otherwise the arc ends on the answer)
+    visual: {
+      kind: 'clock',
+      faces: [{ t: start, caption: `התחלה ${clock(start)}` }],
+      arcs: dur % 60 ? [{ from: start, min: hours * 60, label: duration(hours * 60), ring: 'hour' }] : undefined,
+    },
+    steps: dur % 60 ? [{ text: `${Math.floor(start / 60)} + ${hours} = ⬜`, answer: Math.floor(start / 60) + hours }] : undefined,
+    after: dur % 60 ? `${L(clock(start + hours * 60))} ועוד חצי שעה. מתי זה? 😉` : 'כל שעה, המחוג הקטן זז מספר אחד קדימה 😉',
+  });
 }
 
 // ---------- T10 סדרות ----------
@@ -948,14 +1074,19 @@ function compare(r: Rng): Question {
   const values = [top, ...shuffle(r, [1, 2, 3, 4, 5, 6]).slice(0, 3).map((d) => top - d)];
   const target = biggest ? top : Math.min(...values);
   const order = shuffle(r, values.map((v) => ({ v, e: exprFor(r, v) })));
-  return {
+  return withHint({
     type: 'compare',
     prompt: biggest ? 'באיזה תרגיל התוצאה הכי גדולה?' : 'באיזה תרגיל התוצאה הכי קטנה?',
     options: order.map((x) => x.e),
     correct: order.findIndex((x) => x.v === target),
     mathOptions: true,
     explain: order.map((x) => L(`${x.e} = ${x.v}`)).join(' · '),
-  };
+  }, {
+    ask: `מחשבים כל תרגיל בנפרד, ואז משווים. מחפשים את התוצאה ה${biggest ? 'גדולה' : 'קטנה'} ביותר.`,
+    highlight: [biggest ? 'הכי גדולה' : 'הכי קטנה'],
+    steps: order.slice(0, 3).map((x) => ({ text: `${x.e} = ⬜`, answer: x.v })),
+    after: `ועכשיו את התרגיל האחרון, ואז בחרי את ה${biggest ? 'גדול' : 'קטן'} ביותר 😉`,
+  });
 }
 
 export const MATH_GENERATORS: Record<MathType, (r: Rng) => Question> = {

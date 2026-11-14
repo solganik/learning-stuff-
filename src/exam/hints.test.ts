@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { MATH_GENERATORS, rng, type MathType, type Question } from './questions';
-import { hintTexts, numbersIn, type Visual } from './hints';
+import { clock, MATH_GENERATORS, rng, type MathType, type Question } from './questions';
+import { hintTexts, numbersIn, type HintStep, type Visual } from './hints';
 
 const SEEDS = Array.from({ length: 400 }, (_, i) => i * 7919 + 1);
-const HINTED: MathType[] = ['word', 'missing', 'sequence', 'arith'];
-/** Kinds that get their hints in a later step. */
-const later = (q: Question) => q.type === 'arith' && /[×÷]/.test(q.lines![0]);
+const HINTED = Object.keys(MATH_GENERATORS) as MathType[];
+const HEBREW = /[\u0590-\u05ff]/;
 
 function calc(expr: string): number {
   const js = expr.replace(/−/g, '-').replace(/×/g, '*').replace(/÷/g, '/');
@@ -13,6 +12,28 @@ function calc(expr: string): number {
   return Function(`return (${js})`)() as number;
 }
 const visible = (s: string) => s.replace(/[⁦⁩]/g, '');
+const toMin = (t: string) => Number(t.split(':')[0]) * 60 + Number(t.split(':')[1]);
+
+/** `s` appears in `text` as a whole word or number (not inside a longer word, e.g. שעה inside השעה). */
+function containsWord(text: string, s: string): boolean {
+  const esc = s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^\\u0590-\\u05ff\\d])${esc}([^\\u0590-\\u05ff\\d]|$)`).test(visible(text));
+}
+
+/** Is the step true with its value? Equations are evaluated; "from 7:30 to 8:00 it's ⬜ minutes" is timed. */
+function stepHolds(s: HintStep): boolean {
+  const filled = s.text.replace('⬜', String(s.answer));
+  if (!HEBREW.test(s.text)) {
+    const [l, r] = filled.split(' = ');
+    return calc(l) === calc(r);
+  }
+  const times = visible(s.text).match(/\d+:\d\d/g)!;
+  expect(times, s.text).toHaveLength(2);
+  const span = toMin(times[1]) - toMin(times[0]);
+  if (s.text.includes('דקות')) return span === s.answer;
+  if (s.text.includes('שעות')) return span === 60 * s.answer;
+  throw new Error(`unknown step: ${s.text}`);
+}
 const where = (q: Question) => `${q.type}: ${visible(q.prompt)} ${q.lines?.join(' | ') ?? ''}`;
 
 /** Every number the question already shows, and a test for "this number is (an) answer". */
@@ -53,10 +74,26 @@ function checkVisual(v: Visual, q: Question): void {
     expect(v.n, w).toBeGreaterThan(0);
     if (v.total && /^\d+$/.test(v.total)) expect(v.per === null ? v.loose : v.n * v.per, w).toBe(Number(v.total));
   }
+  if (v.kind === 'clock') {
+    for (const f of v.faces) expect(f.caption, w).toContain(clock(f.t));
+    let at = v.faces[0].t;
+    for (const a of v.arcs ?? []) {
+      expect(a.from, `${w} arcs follow each other`).toBe(at);
+      at += a.min;
+      // where the arc ends must not be where a hand of the answer time points
+      if (q.mathOptions && a.ring === 'minute') expect(at % 60, `${w} arc ends on the answer`).not.toBe(q.value! % 60);
+      if (q.mathOptions && a.ring === 'hour') expect(at % 720, `${w} arc ends on the answer`).not.toBe(q.value! % 720);
+    }
+    if (q.mathOptions) for (const f of v.faces) expect(f.t, `${w} a face shows the answer`).not.toBe(q.value);
+  }
+  if (v.kind === 'column') {
+    const line = visible(q.lines![0]);
+    for (const part of [v.top, v.add, v.result]) expect(line, w).toContain(part);
+  }
 }
 
 describe.each(HINTED)('%s hints', (type) => {
-  const questions = SEEDS.map((s) => MATH_GENERATORS[type](rng(s))).filter((q) => !later(q));
+  const questions = SEEDS.map((s) => MATH_GENERATORS[type](rng(s)));
 
   it('every question has a hint with a guiding question', () => {
     for (const q of questions) {
@@ -72,10 +109,17 @@ describe.each(HINTED)('%s hints', (type) => {
       for (const text of hintTexts(q.hint!))
         for (const n of numbersIn(text)) if (isAnswer(n)) expect(shown.has(n), `${where(q)} leaks ${n} in "${visible(text)}"`).toBe(true);
       for (const s of q.hint!.steps ?? []) expect(isAnswer(s.answer), `${where(q)} step ${s.text}`).toBe(false);
-      if (!q.accept && q.options.length) {
+      // options that aren't plain numbers (times, durations): the right one never appears as a word
+      if (!q.accept && q.options.length && q.type !== 'compare') {
         const right = q.options[q.correct];
-        if (!/^\d+$/.test(right)) for (const text of hintTexts(q.hint!)) expect(visible(text), where(q)).not.toContain(right);
+        if (!/^\d+$/.test(right))
+          for (const text of hintTexts(q.hint!)) expect(containsWord(text, right), `${where(q)} shows "${right}" in "${visible(text)}"`).toBe(false);
       }
+      // a duration answer is never a step's value in hours either
+      if (q.type === 'time' && !q.mathOptions)
+        for (const s of q.hint!.steps ?? []) if (s.text.includes('שעות')) expect(60 * s.answer, where(q)).not.toBe(q.value);
+      // compare: the steps never do all the work; at least one option is left for her
+      if (q.type === 'compare') expect((q.hint!.steps ?? []).length, where(q)).toBeLessThan(q.options.length);
     }
   });
 
@@ -84,8 +128,7 @@ describe.each(HINTED)('%s hints', (type) => {
       for (const s of q.hint!.steps ?? []) {
         expect([...s.text].filter((c) => c === '⬜'), `${where(q)} ${s.text}`).toHaveLength(1);
         expect(Number.isInteger(s.answer) && s.answer >= 0, s.text).toBe(true);
-        const [l, r] = s.text.replace('⬜', String(s.answer)).split(' = ');
-        expect(calc(l), `${where(q)} ${s.text} ← ${s.answer}`).toBe(calc(r));
+        expect(stepHolds(s), `${where(q)} ${visible(s.text)} ← ${s.answer}`).toBe(true);
       }
   });
 
@@ -99,8 +142,8 @@ describe.each(HINTED)('%s hints', (type) => {
 });
 
 describe('hint ladders have substance', () => {
-  it('most word, missing and sequence questions get a drawing and steps', () => {
-    for (const t of ['word', 'missing', 'sequence'] as const) {
+  it('most questions of these types get a drawing and steps', () => {
+    for (const t of ['word', 'missing', 'sequence', 'inequality', 'proportion'] as const) {
       const qs = SEEDS.map((s) => MATH_GENERATORS[t](rng(s)));
       expect(qs.filter((q) => q.hint?.visual).length / qs.length, t).toBeGreaterThan(0.9);
       expect(qs.filter((q) => q.hint?.steps?.length).length / qs.length, t).toBeGreaterThan(0.6);

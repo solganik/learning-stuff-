@@ -42,7 +42,7 @@ function frame(h: number, title: string): SVGSVGElement {
   const svg = svgEl('svg', { viewBox: `0 0 ${W} ${h}`, width: '100%', role: 'img', 'aria-label': title, class: 'visual' });
   svg.setAttribute('direction', 'ltr');
   const defs = svgEl('defs');
-  const m = svgEl('marker', { id: 'v-arrow', viewBox: '0 0 10 10', refX: 8, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse' });
+  const m = svgEl('marker', { id: 'v-arrow', viewBox: '0 0 10 10', refX: 8, refY: 5, markerWidth: 15, markerHeight: 15, markerUnits: 'userSpaceOnUse', orient: 'auto-start-reverse' });
   m.append(svgEl('path', { d: 'M0,0 L10,5 L0,10 z', fill: C.purple }));
   defs.append(m);
   svg.append(defs);
@@ -178,9 +178,11 @@ function line(v: Extract<Visual, { kind: 'line' }>): SVGSVGElement {
       const x = pos(eq.v);
       const dir = v.answers === 'bigger' ? 1 : -1;
       svg.append(
-        svgEl('line', { x1: x + dir * 12, y1: y + 18, x2: x + dir * 90, y2: y + 18, stroke: C.teal, 'stroke-width': 4, 'marker-end': 'url(#v-arrow)' }),
+        svgEl('line', { x1: x + dir * 10, y1: y - 16, x2: x + dir * 110, y2: y - 16, stroke: C.teal, 'stroke-width': 4, 'marker-end': 'url(#v-arrow)' }),
+        label(x + dir * 60, y - 34, 'התשובות כאן', { size: 14, color: C.teal }),
       );
     }
+    svg.append(label(14, y + 18, 'קטן', { size: 13, color: C.purple }), label(W - 14, y + 18, 'גדול', { size: 13, color: C.purple }));
   }
   return svg;
 }
@@ -271,10 +273,96 @@ function groups(v: Extract<Visual, { kind: 'groups' }>): SVGSVGElement {
   return svg;
 }
 
-export function renderVisual(v: Visual): SVGSVGElement | null {
+// ---------- clock ----------
+
+const polar = (cx: number, cy: number, r: number, deg: number): [number, number] => {
+  const a = ((deg - 90) * Math.PI) / 180;
+  return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+};
+
+function arcPath(cx: number, cy: number, r: number, from: number, sweep: number): string {
+  const [x1, y1] = polar(cx, cy, r, from);
+  const [x2, y2] = polar(cx, cy, r, from + sweep);
+  return `M${x1.toFixed(1)},${y1.toFixed(1)} A${r},${r} 0 ${sweep > 180 ? 1 : 0} 1 ${x2.toFixed(1)},${y2.toFixed(1)}`;
+}
+
+function face(svg: SVGSVGElement, cx: number, cy: number, r: number, t: number): void {
+  svg.append(svgEl('circle', { cx, cy, r, fill: '#fff', stroke: C.purple, 'stroke-width': 3 }));
+  for (let h = 1; h <= 12; h++) {
+    const [x, y] = polar(cx, cy, r - 12, h * 30);
+    svg.append(label(x, y, String(h), { size: 11, weight: 700 }));
+  }
+  for (let k = 0; k < 60; k += 5) {
+    const [x1, y1] = polar(cx, cy, r - 2, k * 6);
+    const [x2, y2] = polar(cx, cy, r - 5, k * 6);
+    svg.append(svgEl('line', { x1, y1, x2, y2, stroke: C.purple, 'stroke-width': 1.5 }));
+  }
+  const m = t % 60;
+  const h = Math.floor(t / 60) % 12;
+  const [hx, hy] = polar(cx, cy, r * 0.48, (h + m / 60) * 30);
+  const [mx, my] = polar(cx, cy, r * 0.75, m * 6);
+  svg.append(
+    svgEl('line', { x1: cx, y1: cy, x2: hx, y2: hy, stroke: C.ink, 'stroke-width': 4.5, 'stroke-linecap': 'round' }),
+    svgEl('line', { x1: cx, y1: cy, x2: mx, y2: my, stroke: C.pink, 'stroke-width': 3, 'stroke-linecap': 'round' }),
+    svgEl('circle', { cx, cy, r: 3.5, fill: C.ink }),
+  );
+}
+
+function clockFaces(v: Extract<Visual, { kind: 'clock' }>): SVGSVGElement {
+  const n = v.faces.length;
+  const arcs = v.arcs ?? [];
+  const r = n > 1 ? 50 : 54;
+  const pad = arcs.length ? 12 + arcs.length * 8 : 4;
+  const cy = r + pad + 4;
+  const h = cy + r + pad + 26;
+  const svg = frame(h, 'שעון');
+  v.faces.forEach((f, i) => {
+    const cx = n === 1 ? (arcs.length ? 110 : W / 2) : (W / (n + 1)) * (n - i);
+    face(svg, cx, cy, r, f.t);
+    svg.append(label(cx, h - 12, f.caption, { size: 15 }));
+  });
+  const cx = n === 1 ? (arcs.length ? 110 : W / 2) : (W / (n + 1)) * n;
+  const colors = [C.teal, C.gold, C.purple];
+  arcs.forEach((a, i) => {
+    const ring = r + 7 + i * 8;
+    const start = a.ring === 'minute' ? (a.from % 60) * 6 : ((Math.floor(a.from / 60) % 12) + (a.from % 60) / 60) * 30;
+    const sweep = Math.min(a.ring === 'minute' ? a.min * 6 : a.min / 2, 359);
+    svg.append(
+      svgEl('path', { d: arcPath(cx, cy, ring, start, sweep), fill: 'none', stroke: colors[i], 'stroke-width': 5, 'stroke-linecap': 'round', opacity: 0.85 }),
+    );
+    const ly = cy - (arcs.length - 1) * 14 + i * 28;
+    svg.append(
+      svgEl('rect', { x: W - 22, y: ly - 4, width: 18, height: 8, rx: 4, fill: colors[i] }),
+      label(W - 28, ly, a.label, { anchor: 'end', size: 15 }),
+    );
+  });
+  return svg;
+}
+
+// ---------- column addition ----------
+
+function column(v: Extract<Visual, { kind: 'column' }>): SVGSVGElement {
+  const cw = 34;
+  const rowH = 40;
+  const cols = Math.max(...[v.top, v.add, v.result].map((s) => [...s].length));
+  const x1 = W / 2 + (cols * cw) / 2;
+  const svg = frame(rowH * 3 + 18, 'תרגיל במאונך');
+  svg.append(svgEl('rect', { x: x1 - cw, y: 2, width: cw, height: rowH * 3 + 12, rx: 10, fill: '#fff1a8' }));
+  const row = (s: string, y: number) =>
+    [...s].reverse().forEach((ch, k) => svg.append(label(x1 - cw / 2 - k * cw, y, ch, { size: 26, weight: 800, color: ch === '☀' ? C.gold : C.ink })));
+  row(v.top, 6 + rowH / 2);
+  row(v.add, 6 + rowH * 1.5);
+  svg.append(label(x1 - cols * cw - 16, 6 + rowH * 1.5, '+', { size: 26, weight: 800 }));
+  svg.append(svgEl('line', { x1: x1 - cols * cw - 30, y1: 6 + rowH * 2, x2: x1 + 4, y2: 6 + rowH * 2, stroke: C.ink, 'stroke-width': 3 }));
+  row(v.result, 12 + rowH * 2.5);
+  return svg;
+}
+
+export function renderVisual(v: Visual): SVGSVGElement {
   if (v.kind === 'bar') return bar(v);
   if (v.kind === 'line') return line(v);
   if (v.kind === 'chain') return chain(v);
   if (v.kind === 'groups') return groups(v);
-  return null;
+  if (v.kind === 'clock') return clockFaces(v);
+  return column(v);
 }

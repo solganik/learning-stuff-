@@ -35,6 +35,8 @@ type Run = {
   timedOut: boolean;
   passageOpen: boolean;
   hints: HintState[][];
+  /** Practice: the first wrong answer (she gets a second try), or null. */
+  firstWrong: (number | null)[][];
 };
 
 let app: HTMLElement;
@@ -57,9 +59,8 @@ function button(cls: string, text: string, onClick: () => void): HTMLButtonEleme
 
 const newSeed = () => Date.now() % 1_000_000_007;
 
-/** Text whose L(...) math parts become LTR spans that never wrap mid-expression. */
-function rich(tag: 'p' | 'span' | 'summary', cls: string, text: string): HTMLElement {
-  const node = el(tag, cls);
+/** Append text whose L(...) math parts become LTR spans that never wrap mid-expression. */
+function appendRich(node: HTMLElement, text: string): void {
   text.split(/(\u2066[^\u2069]*\u2069)/).forEach((part) => {
     if (part.startsWith('\u2066')) {
       const m = el('bdi', 'm', part.slice(1, -1));
@@ -67,6 +68,11 @@ function rich(tag: 'p' | 'span' | 'summary', cls: string, text: string): HTMLEle
       node.append(m);
     } else if (part) node.append(document.createTextNode(part));
   });
+}
+
+function rich(tag: 'p' | 'span' | 'summary', cls: string, text: string): HTMLElement {
+  const node = el(tag, cls);
+  appendRich(node, text);
   return node;
 }
 
@@ -204,6 +210,7 @@ function startRun(mode: Run['mode'], label: string, make: (seed: number) => Sect
     timedOut: false,
     passageOpen: true,
     hints: sections.map((s) => s.questions.map(() => ({ level: 0, solved: 0, wrong: 0, given: [] }))),
+    firstWrong: sections.map((s) => s.questions.map(() => null)),
   };
   if (mode === 'exam') renderSectionIntro();
   else renderQuestion();
@@ -341,12 +348,15 @@ function markWords(node: HTMLElement, words: string[]): void {
 }
 
 /** "47 + ⬜ = 50" with the ⬜ as an input (current step), a filled box (solved) or a hint value (given). */
-function stepRow(text: string, state: 'todo' | 'done' | 'given', value: number, onTry: (n: number, row: HTMLElement) => void): HTMLElement {
+function stepRow(text: string, lead: string, state: 'todo' | 'done' | 'given', value: number, onTry: (n: number, row: HTMLElement) => void): HTMLElement {
   const row = el('div', `h-step ${state}`);
-  const expr = el('div', 'h-expr');
-  expr.dir = 'ltr';
+  // equations read left to right; a Hebrew sentence ("from 7:30 to 8:00 it's ⬜ minutes") right to left
+  const words = /[\u0590-\u05ff]/.test(text);
+  const expr = el('div', words ? 'h-expr words' : 'h-expr');
+  expr.dir = words ? 'rtl' : 'ltr';
   const [before, after] = text.split('⬜');
-  expr.append(document.createTextNode(before));
+  if (lead) expr.append(el('span', 'h-lead', lead));
+  appendRich(expr, before);
   if (state === 'todo') {
     const input = el('input', 'h-input');
     input.inputMode = 'numeric';
@@ -362,7 +372,7 @@ function stepRow(text: string, state: 'todo' | 'done' | 'given', value: number, 
     expr.append(el('span', 'h-val', String(value)));
     row.append(expr, el('span', 'h-mark', state === 'done' ? '✓' : '👀'));
   }
-  expr.append(document.createTextNode(after));
+  appendRich(expr, after);
   return row;
 }
 
@@ -384,7 +394,7 @@ function renderHint(q: Question, st: HintState, prompt: HTMLElement): HTMLElemen
       steps.slice(0, st.solved + 1).forEach((step, k) => {
         const state = k < st.solved ? (st.given[k] ? 'given' : 'done') : 'todo';
         part.append(
-          stepRow(step.text, state, step.answer, (n, row) => {
+          stepRow(step.text, step.lead ?? '', state, step.answer, (n, row) => {
             if (n === step.answer) {
               st.solved++;
               st.wrong = 0;
@@ -448,6 +458,7 @@ function renderQuestion(): void {
   screen.append(card);
   if (practice && !locked && q.hint) screen.append(renderHint(q, r.hints[r.s][r.i], prompt));
 
+  const tried = practice ? r.firstWrong[r.s][r.i] : null;
   if (isOpen(q)) {
     screen.append(renderKeypad(q, locked));
   } else {
@@ -456,15 +467,25 @@ function renderQuestion(): void {
       const cls = ['option'];
       if (chosen === k) cls.push('chosen');
       if (locked && k === q.correct) cls.push('right');
-      if (locked && chosen === k && k !== q.correct) cls.push('wrong');
+      if ((locked && chosen === k && k !== q.correct) || tried === k) cls.push('wrong');
+      if (!locked && tried === k) cls.push('tried');
       const b = button(cls.join(' '), '', () => choose(k));
-      b.disabled = locked;
+      b.disabled = locked || tried === k;
       const t = el('span', 'opt-text', text);
       if (q.mathOptions) t.dir = 'ltr';
       b.append(el('span', 'letter', LETTERS[k]), t);
       opts.append(b);
     });
     screen.append(opts);
+  }
+
+  if (practice && !locked && tried !== null) {
+    const nudge = el('section', 'q-nudge');
+    const trap = isOpen(q) ? '' : q.traps?.[tried];
+    nudge.append(el('p', 'fb-title', isOpen(q) ? `🤔 כמעט! זה לא ${tried}.` : '🤔 כמעט!'));
+    nudge.append(el('p', trap ? 'fb-trap' : 'lead small', trap ? `⚠️ ${trap}` : q.hint ? 'לא בדיוק. רוצה רמז? 💡' : 'לא בדיוק. נסי שוב 🙂'));
+    if (trap) nudge.append(el('p', 'lead small', 'נסי שוב 🙂'));
+    screen.append(nudge);
   }
 
   if (practice) {
@@ -508,6 +529,15 @@ function renderQuestion(): void {
 
 function choose(k: number): void {
   const r = run!;
+  const q = r.sections[r.s].questions[r.i];
+  // practice: the first wrong answer gets a nudge and a second try (like the tile game's "2 wrong → reveal")
+  if (r.mode === 'practice' && !isRight(q, k) && r.firstWrong[r.s][r.i] === null) {
+    r.firstWrong[r.s][r.i] = k;
+    r.typed = '';
+    renderQuestion();
+    document.querySelector('.q-nudge')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    return;
+  }
   r.answers[r.s][r.i] = k;
   renderQuestion();
   if (r.mode === 'practice') document.querySelector('.q-feedback')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });

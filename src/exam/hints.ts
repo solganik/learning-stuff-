@@ -18,12 +18,18 @@ export type Visual =
   | { kind: 'chain'; items: string[]; arcs: { from: number; to: number; label: string; below?: boolean }[] }
   /** n circles, each with `per` dots, or `inner` text, or '?' when per is null. `loose` dots wait above to be shared. */
   | { kind: 'groups'; n: number; per: number | null; inner?: string; cap?: string; cols?: number; loose?: number; total?: string; note?: string }
-  /** Analog clock faces (minutes since midnight), an optional arc on the first face, and a note. */
-  | { kind: 'clock'; faces: { t: number; caption: string }[]; arc?: { from: number; min: number; label: string }; note?: string }
+  /**
+   * Analog clock faces (minutes since midnight). Arcs go on the first face: around the minute ring, or along the
+   * hour ring for long times. The end of an arc is never drawn as hands or a label.
+   */
+  | { kind: 'clock'; faces: { t: number; caption: string }[]; arcs?: ClockArc[] }
   /** A vertical (column) addition with the ones column highlighted. */
-  | { kind: 'column'; rows: string[] };
+  | { kind: 'column'; top: string; add: string; result: string };
 
-export type HintStep = { text: string; answer: number };
+export type ClockArc = { from: number; min: number; label: string; ring: 'minute' | 'hour' };
+
+/** `lead` is shown before the blank expression and is not part of it (e.g. "🍎 ="). */
+export type HintStep = { text: string; answer: number; lead?: string };
 
 export type Hint = {
   /** Step 1: a guiding question (may use L(...)). */
@@ -45,15 +51,15 @@ export const numbersIn = (s: string): number[] => (s.replace(/[⁦⁩]/g, '').ma
 
 /** Every text and label a hint can display (for the no-leak rule). */
 export function hintTexts(h: Hint): string[] {
-  const out = [h.ask, h.after ?? '', ...(h.highlight ?? []), ...(h.steps ?? []).map((s) => s.text)];
+  const out = [h.ask, h.after ?? '', ...(h.highlight ?? []), ...(h.steps ?? []).flatMap((s) => [s.lead ?? '', s.text])];
   const v = h.visual;
   if (!v) return out;
   if (v.kind === 'bar') out.push(...v.rows.flatMap((r) => [r.name ?? '', ...r.segs.map((s) => s.label)]), v.total?.label ?? '');
   if (v.kind === 'line') out.push(...v.points.map((p) => p.label), ...v.jumps);
   if (v.kind === 'chain') out.push(...v.items, ...v.arcs.map((a) => a.label));
   if (v.kind === 'groups') out.push(v.inner ?? '', v.cap ?? '', v.total ?? '', v.note ?? '', v.per !== null ? String(v.per) : '');
-  if (v.kind === 'clock') out.push(...v.faces.map((f) => f.caption), v.arc?.label ?? '', v.note ?? '');
-  if (v.kind === 'column') out.push(...v.rows);
+  if (v.kind === 'clock') out.push(...v.faces.map((f) => f.caption), ...(v.arcs ?? []).map((a) => a.label));
+  if (v.kind === 'column') out.push(v.top, v.add, v.result);
   return out;
 }
 

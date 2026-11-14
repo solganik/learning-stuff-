@@ -1183,6 +1183,25 @@ mark.hl {
   gap: 4px;
 }
 
+.h-expr.words {
+  display: block;
+  direction: rtl;
+  font-size: 19px;
+  font-weight: 700;
+  white-space: normal;
+  line-height: 2.4;
+}
+
+.h-expr.words .h-input,
+.h-expr.words .h-val {
+  vertical-align: middle;
+  margin: 0 2px;
+}
+
+.h-lead {
+  margin-inline-end: 4px;
+}
+
 .h-input,
 .h-val {
   width: 58px;
@@ -1228,4 +1247,28 @@ mark.hl {
   font-size: 16px;
   font-weight: 700;
   color: #b4005a;
+}
+
+/* ---------- second try ---------- */
+
+.q-nudge {
+  background: #fff;
+  border-radius: 18px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  text-align: center;
+  border: 3px dashed var(--pink-soft);
+  animation: fade-in 0.25s;
+}
+
+.q-nudge .lead.small {
+  margin: 0;
+}
+
+.option.tried {
+  opacity: 0.55;
+  animation: shake 0.4s;
 }
