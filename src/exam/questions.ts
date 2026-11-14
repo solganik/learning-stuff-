@@ -1,5 +1,7 @@
 /** Math questions in the style of the grade-2 gifted screening test (שלב א). All generated, seeded. */
 
+import { addSteps, countUp, hopLine, L, mulSteps, nearbyFact, safeSteps, tenUp, type Hint } from './hints';
+
 export type Rng = () => number;
 
 /** mulberry32: small seeded PRNG so an exam can be regenerated (and printed) from its seed. */
@@ -24,8 +26,7 @@ export function shuffle<T>(r: Rng, a: readonly T[]): T[] {
   return out;
 }
 
-/** Keep math left-to-right inside Hebrew sentences. */
-export const L = (math: string): string => `⁦${math}⁩`;
+export { L };
 
 export type MathType =
   | 'arith'
@@ -58,6 +59,8 @@ export type Question = {
   value?: number;
   /** Open question: which typed numbers count as correct. */
   accept?: (n: number) => boolean;
+  /** The 💡 ladder (generated math only). */
+  hint?: Hint;
 };
 
 export const TYPE_NAMES: Record<QType, string> = {
@@ -122,6 +125,11 @@ export function numberChoice(
   };
 }
 
+/** Attach a hint, dropping any step that would show the answer for these numbers. */
+function withHint(q: Question, h: Hint): Question {
+  return { ...q, hint: { ...h, steps: safeSteps(h.steps, q) } };
+}
+
 const open = (answer: number, accept: (n: number) => boolean = (n) => n === answer): Partial<Question> => ({
   options: [],
   correct: -1,
@@ -134,13 +142,10 @@ const open = (answer: number, accept: (n: number) => boolean = (n) => n === answ
 
 function arith(r: Rng): Question {
   const kind = pick(r, ['add10', 'sub10', 'add2', 'sub2', 'mul', 'div', 'mul10', 'hundred', 'chain'] as const);
-  const q = (line: string, answer: number, wrongs: Wrong[], explain: string): Question => ({
-    type: 'arith',
-    prompt: 'כמה זה?',
-    lines: [`${line} = ?`],
-    explain,
-    ...numberChoice(r, answer, wrongs),
-  });
+  const q = (line: string, answer: number, wrongs: Wrong[], explain: string, hint?: Hint): Question => {
+    const base: Question = { type: 'arith', prompt: 'כמה זה?', lines: [`${line} = ?`], explain, ...numberChoice(r, answer, wrongs) };
+    return hint ? withHint(base, hint) : base;
+  };
 
   if (kind === 'add10') {
     const a = int(r, 1, 9) * 10 + int(r, 5, 9);
@@ -151,7 +156,21 @@ function arith(r: Rng): Question {
       b === need
         ? `${L(`${a} + ${b} = ${ans}`)}, עשרת שלמה!`
         : `משלימים לעשרת: ${L(`${a} + ${need} = ${a + need}`)}, ועוד ${L(String(b - need))}: ${L(String(ans))}`;
-    return q(`${a} + ${b}`, ans, [[ans - 10, TRAP.carry], ans + 1, ans - 1, ans + 10], explain);
+    const hint: Hint =
+      b === need
+        ? {
+            ask: `${L(`${a} + ${b}`)}: מסתכלים על האחדות. ${L(`${a % 10} + ${b}`)}, מגיעים בדיוק לעשרת עגולה?`,
+            visual: hopLine(a, [b]),
+            steps: [{ text: `${a % 10} + ${b} = ⬜`, answer: a % 10 + b }],
+            after: 'עשר אחדות הן עשרת אחת. עכשיו כמה זה? 😉',
+          }
+        : {
+            ask: `האם עוברים עשרת? כמה חסר ל־${L(a)} כדי להגיע ל־${L(a + need)}?`,
+            visual: hopLine(a, [need, b - need]),
+            steps: [{ text: `${a} + ⬜ = ${a + need}`, answer: need }, { text: `${b} = ${need} + ⬜`, answer: b - need }],
+            after: `עכשיו ${L(a + need)} ועוד מה שנשאר 😉`,
+          };
+    return q(`${a} + ${b}`, ans, [[ans - 10, TRAP.carry], ans + 1, ans - 1, ans + 10], explain, hint);
   }
   if (kind === 'sub10') {
     const a = int(r, 2, 10) * 10 + int(r, 1, 7);
@@ -159,7 +178,12 @@ function arith(r: Rng): Question {
     const b = int(r, u + 1, 9);
     const ans = a - b;
     const explain = `יורדים קודם לעשרת: ${L(`${a} − ${u} = ${a - u}`)}, ואז עוד ${L(`− ${b - u}`)}: ${L(String(ans))}`;
-    return q(`${a} − ${b}`, ans, [[ans + 10, TRAP.carry], ans - 1, ans + 1, ans - 10], explain);
+    return q(`${a} − ${b}`, ans, [[ans + 10, TRAP.carry], ans - 1, ans + 1, ans - 10], explain, {
+      ask: `יורדים קודם לעשרת העגולה: כמה צריך להוריד מ־${L(a)} כדי להגיע ל־${L(a - u)}?`,
+      visual: hopLine(a, [-u, -(b - u)]),
+      steps: [{ text: `${a} − ⬜ = ${a - u}`, answer: u }, { text: `${b} = ${u} + ⬜`, answer: b - u }],
+      after: `עכשיו ${L(a - u)} פחות מה שנשאר 😉`,
+    });
   }
   if (kind === 'add2') {
     const a = int(r, 11, 69);
@@ -171,7 +195,20 @@ function arith(r: Rng): Question {
         ? `קודם העשרות: ${L(`${a} + ${tens} = ${a + tens}`)}, ואז האחדות: ${L(`${a + tens} + ${b % 10} = ${ans}`)}`
         : `${L(`${a} + ${b} = ${ans}`)}`;
     const carried = (a % 10) + (b % 10) >= 10;
-    return q(`${a} + ${b}`, ans, carried ? [[ans - 10, TRAP.carry], ans + 1, ans + 10] : [ans + 10, ans - 1, ans - 10], explain);
+    const m = a + tens;
+    const ones = b % 10;
+    const need = tenUp(m) - m;
+    const hint: Hint = { ask: `קודם מוסיפים את העשרות של ${L(b)}, אחר כך את האחדות.`, visual: hopLine(a, [tens], false) };
+    if (ones && ones > need) {
+      hint.visual = hopLine(a, [tens, need, ones - need], false);
+      hint.steps = [{ text: `${a} + ${tens} = ⬜`, answer: m }, { text: `${m} + ⬜ = ${m + need}`, answer: need }];
+      hint.after = `עוברים דרך העשרת העגולה. נשאר להוסיף עוד ${L(ones - need)} 😉`;
+    } else if (ones) {
+      hint.visual = hopLine(a, [tens, ones], false);
+      hint.steps = [{ text: `${a} + ${tens} = ⬜`, answer: m }];
+      hint.after = `עכשיו מוסיפים את האחדות: ${L(`+ ${ones}`)} 😉`;
+    }
+    return q(`${a} + ${b}`, ans, carried ? [[ans - 10, TRAP.carry], ans + 1, ans + 10] : [ans + 10, ans - 1, ans - 10], explain, hint);
   }
   if (kind === 'sub2') {
     const a = int(r, 40, 99);
@@ -183,7 +220,17 @@ function arith(r: Rng): Question {
       b % 10
         ? `קודם העשרות: ${L(`${a} − ${tens} = ${a - tens}`)}, ואז האחדות: ${L(`${a - tens} − ${b % 10} = ${ans}`)}`
         : `${L(`${a} − ${b} = ${ans}`)}`;
-    return q(`${a} − ${b}`, ans, [[digitSlip, TRAP.digits], ans + 10, ans - 1, ans + 1], explain);
+    const m = a - tens;
+    const ones = b % 10;
+    const borrow = ones > m % 10 && m % 10 > 0;
+    const hint: Hint = { ask: `קודם מורידים את העשרות של ${L(b)}, אחר כך את האחדות.`, visual: hopLine(a, ones ? [-tens, -ones] : [-tens], false) };
+    if (ones) hint.steps = [{ text: `${a} − ${tens} = ⬜`, answer: m }];
+    if (borrow) {
+      hint.visual = hopLine(a, [-tens, -(m % 10), -(ones - m % 10)], false);
+      hint.steps!.push({ text: `${m} − ⬜ = ${m - (m % 10)}`, answer: m % 10 });
+      hint.after = `יורדים דרך העשרת העגולה. נשאר להוריד עוד ${L(ones - (m % 10))} 😉`;
+    } else if (ones) hint.after = `עכשיו מורידים את האחדות: ${L(`− ${ones}`)} 😉`;
+    return q(`${a} − ${b}`, ans, [[digitSlip, TRAP.digits], ans + 10, ans - 1, ans + 1], explain, hint);
   }
   if (kind === 'mul10') {
     const x = int(r, 2, 12);
@@ -200,7 +247,18 @@ function arith(r: Rng): Question {
         ? `משלימים: מ־${L(String(x))} ל־${L(String(x + up))} זה ${L(String(up))}, ומ־${L(String(x + up))} ל־100 זה ${L(String(100 - x - up))}. יחד ${L(String(ans))}`
         : `${L(`100 − ${x} = ${ans}`)}`;
     const slip = (10 - Math.floor(x / 10)) * 10 + (10 - (x % 10)); // completes both digits to 10
-    return q(`100 − ${x}`, ans, [[slip, TRAP.digits], ans + 10, ans - 1, ans + 1], explain);
+    const hint: Hint = x % 10
+      ? {
+          ask: `כמה חסר מ־${L(x)} עד ${L(100)}? קופצים קודם לעשרת הבאה, ואז ל־${L(100)}.`,
+          visual: { kind: 'line', points: [{ v: x, label: String(x) }, { v: x + up, label: String(x + up) }, { v: 100, label: '100' }], jumps: [`+${up}`, '?'] },
+          steps: [{ text: `${x} + ⬜ = ${x + up}`, answer: up }, { text: `${x + up} + ⬜ = 100`, answer: 100 - x - up }],
+          after: 'עכשיו חברי את שתי הקפיצות 😉',
+        }
+      : {
+          ask: `כמה עשרות חסרות מ־${L(x)} עד ${L(100)}?`,
+          visual: { kind: 'line', points: [{ v: x, label: String(x) }, { v: 100, label: '100' }], jumps: ['?'] },
+        };
+    return q(`100 − ${x}`, ans, [[slip, TRAP.digits], ans + 10, ans - 1, ans + 1], explain, hint);
   }
   if (kind === 'chain') {
     const a = int(r, 20, 60);
@@ -208,7 +266,11 @@ function arith(r: Rng): Question {
     const c = int(r, 3, 20);
     const ans = a - b + c;
     return q(`${a} − ${b} + ${c}`, ans, [[a - b, TRAP.step], [a - b - c, TRAP.wrongOp], ans + 10, ans - 1],
-      `משמאל לימין: ${L(`${a} − ${b} = ${a - b}`)}, ואז ${L(`${a - b} + ${c} = ${ans}`)}`);
+      `משמאל לימין: ${L(`${a} − ${b} = ${a - b}`)}, ואז ${L(`${a - b} + ${c} = ${ans}`)}`, {
+        ask: 'עושים שלב אחרי שלב, משמאל לימין.',
+        steps: [{ text: `${a} − ${b} = ⬜`, answer: a - b }],
+        after: `ועכשיו ${L(`+ ${c}`)} 😉`,
+      });
   }
   const f = int(r, 2, 9);
   const k = int(r, 2, 10);
@@ -233,45 +295,74 @@ function missing(r: Rng): Question {
   const flip = r() < 0.4; // the test sometimes writes the result first: 13 = 😊 + 10
   const isOpen = r() < 0.3;
   const eq = (left: string, right: string) => (flip ? `${right} = ${left}` : `${left} = ${right}`);
-  const q = (line: string, answer: number, wrongs: Wrong[], explain: string): Question => ({
-    type: 'missing',
-    prompt: box === '😊' ? 'איזה מספר מסתתר מאחורי 😊?' : 'איזה מספר חסר במקום ⬜?',
-    lines: [line],
-    explain,
-    ...numberChoice(r, answer, wrongs),
-    ...(isOpen ? open(answer) : {}),
-  });
+  const q = (line: string, answer: number, wrongs: Wrong[], explain: string, hint: Hint): Question =>
+    withHint(
+      {
+        type: 'missing',
+        prompt: box === '😊' ? 'איזה מספר מסתתר מאחורי 😊?' : 'איזה מספר חסר במקום ⬜?',
+        lines: [line],
+        explain,
+        ...numberChoice(r, answer, wrongs),
+        ...(isOpen ? open(answer) : {}),
+      },
+      hint,
+    );
+  const not = (x: number) => (n: number) => n === x;
 
   if (kind === 'plus') {
     const x = int(r, 3, 70);
     const b = int(r, 3, 45);
     const c = x + b;
+    const up = countUp(b, c, not(x));
     return q(eq(`${box} + ${b}`, String(c)), x, [[c + b, TRAP.opposite], x + 1, x - 1, x + 10],
-      `הופכים לחיסור: ${L(`${c} − ${b} = ${x}`)}. בדיקה: ${L(`${x} + ${b} = ${c}`)} ✓`);
+      `הופכים לחיסור: ${L(`${c} − ${b} = ${x}`)}. בדיקה: ${L(`${x} + ${b} = ${c}`)} ✓`, {
+        ask: `איזה מספר ועוד ${L(b)} נותן ${L(c)}? סופרים קפיצות מ־${L(b)} עד ${L(c)}.`,
+        ...up,
+        after: up.steps.length ? 'עכשיו חברי את כל הקפיצות 😉' : undefined,
+      });
   }
   if (kind === 'minusFirst') {
     const x = int(r, 20, 99);
     const b = int(r, 3, x - 5);
     const c = x - b;
+    const add = addSteps(c, b);
     return q(eq(`${box} − ${b}`, String(c)), x, [[c - b, TRAP.opposite], x + 1, x - 1, x - 10],
-      `הופכים לחיבור: ${L(`${c} + ${b} = ${x}`)}. בדיקה: ${L(`${x} − ${b} = ${c}`)} ✓`);
+      `הופכים לחיבור: ${L(`${c} + ${b} = ${x}`)}. בדיקה: ${L(`${x} − ${b} = ${c}`)} ✓`, {
+        ask: `חושבים הפוך: מאיזה מספר הורידו ${L(b)} ונשאר ${L(c)}? מה שהורידו ועוד מה שנשאר, זה המספר כולו.`,
+        visual: { kind: 'bar', rows: [{ segs: [{ v: c, label: String(c) }, { v: b, label: String(b) }] }], total: { v: x, label: '?' } },
+        steps: add.steps,
+        after: add.steps.length ? `עכשיו סיימי את החיבור ${L(`${c} + ${b}`)} 😉` : undefined,
+      });
   }
   if (kind === 'minusMiddle') {
     const a = int(r, 20, 99);
     const x = int(r, 3, a - 3);
     const c = a - x;
+    const up = countUp(c, a, not(x));
     return q(eq(`${a} − ${box}`, String(c)), x, [[a + c, TRAP.opposite], x + 1, x - 1, x + 10],
-      `כמה צריך להוריד מ־${L(String(a))} כדי להגיע ל־${L(String(c))}? ${L(`${a} − ${c} = ${x}`)}`);
+      `כמה צריך להוריד מ־${L(String(a))} כדי להגיע ל־${L(String(c))}? ${L(`${a} − ${c} = ${x}`)}`, {
+        ask: `כמה הורידו מ־${L(a)} כדי שיישאר ${L(c)}? אפשר לספור קפיצות מ־${L(c)} עד ${L(a)}.`,
+        ...up,
+        after: up.steps.length ? 'עכשיו חברי את כל הקפיצות 😉' : undefined,
+      });
   }
   const f = int(r, 2, 9);
   const x = int(r, 2, 10);
   const c = f * x;
   if (kind === 'divide') {
     return q(eq(`${box} ÷ ${f}`, String(x)), c, [[x + f, TRAP.wrongOp], [x - f, TRAP.opposite], c + f, c - f],
-      `הופכים לכפל: ${L(`${x} × ${f} = ${c}`)}. בדיקה: ${L(`${c} ÷ ${f} = ${x}`)} ✓`);
+      `הופכים לכפל: ${L(`${x} × ${f} = ${c}`)}. בדיקה: ${L(`${c} ÷ ${f} = ${x}`)} ✓`, {
+        ask: `חושבים הפוך: איזה מספר מחלקים ל־${L(f)} קבוצות שוות, ובכל קבוצה יוצא ${L(x)}?`,
+        visual: { kind: 'groups', n: f, per: x, total: '?' },
+        ...mulSteps(f, x),
+      });
   }
   const line = kind === 'times' ? eq(`${box} × ${f}`, String(c)) : eq(`${f} × ${box}`, String(c));
-  return q(line, x, [[c - f, TRAP.wrongOp], x + 1, x - 1, f], `כמה פעמים ${L(String(f))} עושה ${L(String(c))}? ${L(`${x} × ${f} = ${c}`)}`);
+  return q(line, x, [[c - f, TRAP.wrongOp], x + 1, x - 1, f], `כמה פעמים ${L(String(f))} עושה ${L(String(c))}? ${L(`${x} × ${f} = ${c}`)}`, {
+    ask: `איזה מספר כפול ${L(f)} נותן ${L(c)}?`,
+    visual: { kind: 'groups', n: f, per: null, loose: c, total: String(c), note: 'חלקי לקבוצות שוות' },
+    ...nearbyFact(f, x),
+  });
 }
 
 // ---------- T3 אי-שוויון ----------
@@ -429,12 +520,11 @@ function word(r: Rng): Question {
     'change', 'groups', 'share', 'twoStep', 'age', 'line', 'gaveGot', 'week', 'boxes', 'timesLess', 'sumShare', 'half',
   ] as const);
   const p = pick(r, PEOPLE);
-  const q = (prompt: string, answer: number, wrongs: Wrong[], explain: string): Question => ({
-    type: 'word',
-    prompt,
-    explain,
-    ...numberChoice(r, answer, wrongs),
-  });
+  const q = (prompt: string, answer: number, wrongs: Wrong[], explain: string, hint: Hint): Question => {
+    const highlight = hint.highlight?.filter((w) => prompt.includes(w));
+    return withHint({ type: 'word', prompt, explain, ...numberChoice(r, answer, wrongs) }, { ...hint, highlight });
+  };
+  const seg = (v: number, label = String(v)) => ({ v, label });
 
   if (kind === 'change') {
     const one = pick(r, ['ספר', 'כדור', 'לחם', 'משחק']);
@@ -449,6 +539,13 @@ function word(r: Rng): Question {
       pay - total,
       [[pay - (p1 + p2), `שכחת לכפול: יש ${k} ${many}, לא אחת.`], [total, TRAP.step], pay - total + 1],
       `${L(`${k} × ${p2} = ${k * p2}`)}, ועוד ${L(String(p1))}: ${L(`${k * p2} + ${p1} = ${total}`)}. העודף: ${L(`${pay} − ${total} = ${pay - total}`)}`,
+      {
+        ask: `כמה ${p.n} ${g(p, 'שילם', 'שילמה')}? כמה עלו כל הקניות? עודף = מה ששילמו פחות מה שהקניות עלו.`,
+        highlight: ['כל אחת', 'עודף'],
+        visual: { kind: 'bar', rows: [{ segs: [seg(p1), seg(k * p2, `${k} × ${p2}`), seg(pay - total, '?')] }], total: seg(pay) },
+        steps: [{ text: `${k} × ${p2} = ⬜`, answer: k * p2 }, { text: `${k * p2} + ${p1} = ⬜`, answer: total }],
+        after: `ועכשיו: כמה נשאר מ־${L(pay)}? 😉`,
+      },
     );
   }
   if (kind === 'groups') {
@@ -459,7 +556,12 @@ function word(r: Rng): Question {
       `בקופסה יש ${a} שורות, ובכל שורה ${b} עוגיות. כמה עוגיות יש בקופסה?`,
       `בגינה של ${p.n} יש ${a} עציצים, ובכל עציץ ${b} פרחים. כמה פרחים יש בגינה?`,
     ]);
-    return q(text, a * b, [[a + b, TRAP.wrongOp], a * b + b, a * b - b, a * b + 1], `${L(String(a))} קבוצות של ${L(String(b))}: ${L(`${a} × ${b} = ${a * b}`)}`);
+    return q(text, a * b, [[a + b, TRAP.wrongOp], a * b + b, a * b - b, a * b + 1], `${L(String(a))} קבוצות של ${L(String(b))}: ${L(`${a} × ${b} = ${a * b}`)}`, {
+      ask: 'כמה קבוצות יש? וכמה בכל קבוצה?',
+      highlight: ['ליד כל שולחן', 'בכל שורה', 'בכל עציץ'],
+      visual: { kind: 'groups', n: a, per: b, total: '?' },
+      ...mulSteps(a, b),
+    });
   }
   if (kind === 'share') {
     const k = int(r, 2, 9);
@@ -470,6 +572,12 @@ function word(r: Rng): Question {
       x,
       [[t - k, TRAP.wrongOp], x + 1, x - 1, k],
       `${L(`${t} ÷ ${k} = ${x}`)}. בדיקה: ${L(`${k} × ${x} = ${t}`)} ✓`,
+      {
+        ask: `מחלקים שווה בשווה: כמה מקבל כל חבר? ${L(k)} כפול מה נותן ${L(t)}?`,
+        highlight: ['שווה בשווה', 'כל חבר'],
+        visual: { kind: 'groups', n: k, per: null, loose: t, total: String(t), note: 'חלקי לקבוצות שוות' },
+        ...nearbyFact(k, x),
+      },
     );
   }
   if (kind === 'twoStep') {
@@ -481,6 +589,13 @@ function word(r: Rng): Question {
       2 * a + d,
       [[a + d, TRAP.step], [2 * a, `שכחת שלאחד יש ${d} יותר.`], 2 * a + d + 10, 2 * a + d - 1],
       `שני שלבים! ל${p2.n} יש ${L(`${a} + ${d} = ${a + d}`)}. יחד: ${L(`${a} + ${a + d} = ${2 * a + d}`)}`,
+      {
+        ask: `שני שלבים: קודם, כמה גולות יש ל${p2.n}? אחר כך מחברים את שניהם.`,
+        highlight: ['יותר', 'יחד'],
+        visual: { kind: 'bar', rows: [{ name: p1.n, segs: [seg(a)] }, { name: p2.n, segs: [seg(a), seg(d)] }], total: seg(2 * a + d, '?') },
+        steps: [{ text: `${a} + ${d} = ⬜`, answer: a + d }],
+        after: 'עכשיו חברי את שניהם יחד 😉',
+      },
     );
   }
   if (kind === 'age') {
@@ -492,6 +607,13 @@ function word(r: Rng): Question {
       a + d + y,
       [[a + d, TRAP.step], [a + y, `זה הגיל של ${p.n}, לא של האחות.`], a + d + y + 1, a + d - y],
       `היום האחות בת ${L(`${a} + ${d} = ${a + d}`)}. בעוד ${L(String(y))} שנים: ${L(`${a + d} + ${y} = ${a + d + y}`)}`,
+      {
+        ask: `קודם: בת כמה האחות היום? אחר כך: מה קורה בעוד ${L(y)} שנים?`,
+        highlight: ['גדולה', 'בעוד'],
+        visual: hopLine(a, [d, y], false),
+        steps: [{ text: `${a} + ${d} = ⬜`, answer: a + d }],
+        after: `ועכשיו עוד ${L(y)} שנים 😉`,
+      },
     );
   }
   if (kind === 'line') {
@@ -502,6 +624,13 @@ function word(r: Rng): Question {
       k + m - 1,
       [[k + m, `ספרת את ${p.n} פעמיים!`], k + m - 2, k + m + 1],
       `לפני ${p.n} יש ${L(String(k - 1))} ילדים, אחרי ${g(p, 'הוא', 'היא')} עוד ${L(String(m - 1))}, ועוד ${p.n} ${g(p, 'עצמו', 'עצמה')}: ${L(`${k - 1} + ${m - 1} + 1 = ${k + m - 1}`)}`,
+      {
+        ask: `כמה ילדים עומדים לפני ${p.n}? כמה ${g(p, 'אחריו', 'אחריה')}? ואל תשכחי את ${p.n} ${g(p, 'עצמו', 'עצמה')}!`,
+        highlight: ['מההתחלה', 'מהסוף'],
+        visual: { kind: 'bar', rows: [{ segs: [seg(k - 1, 'לפני'), seg(1, '⭐'), seg(m - 1, 'אחרי')] }], total: seg(k + m - 1, '?') },
+        steps: [{ text: `${k} − 1 = ⬜`, answer: k - 1 }, { text: `${m} − 1 = ⬜`, answer: m - 1 }],
+        after: `עכשיו חברי: לפני, אחרי, ועוד ${p.n} 😉`,
+      },
     );
   }
   if (kind === 'gaveGot') {
@@ -514,6 +643,13 @@ function word(r: Rng): Question {
       a - b + c,
       [[a - b, TRAP.step], [a + b + c, TRAP.wrongOp], [a - b - c, 'קיבלה = מוסיפים, לא מורידים.'], a - b + c + 10],
       `${L(`${a} − ${b} = ${a - b}`)}, ואז ${L(`${a - b} + ${c} = ${a - b + c}`)}`,
+      {
+        ask: `${g(p, 'נתן', 'נתנה')}: יש פחות. ${g(p, 'קיבל', 'קיבלה')}: יש יותר. עושים לפי הסדר.`,
+        highlight: [g(p, 'הוא נתן', 'היא נתנה'), g(p, 'קיבל', 'קיבלה')],
+        visual: hopLine(a, [-b, c], false),
+        steps: [{ text: `${a} − ${b} = ⬜`, answer: a - b }],
+        after: `ועכשיו מוסיפים את מה ש${g(p, 'קיבל', 'קיבלה')} 😉`,
+      },
     );
   }
   if (kind === 'week') {
@@ -523,6 +659,12 @@ function word(r: Rng): Question {
       7 * x,
       [[x + 7, TRAP.wrongOp], [6 * x, 'בשבוע יש 7 ימים.'], 8 * x, 7 * x + 1],
       `בשבוע יש ${L('7')} ימים: ${L(`7 × ${x} = ${7 * x}`)}`,
+      {
+        ask: 'כמה ימים יש בשבוע? וכמה עמודים בכל יום?',
+        highlight: ['בכל יום', 'בשבוע'],
+        visual: { kind: 'groups', n: 7, per: x, total: '?' },
+        ...mulSteps(7, x),
+      },
     );
   }
   if (kind === 'boxes') {
@@ -534,6 +676,13 @@ function word(r: Rng): Question {
       k * rows * per,
       [[rows * per, TRAP.step], [k + rows + per, TRAP.wrongOp], k * rows * per + per, k * per],
       `בקופסה אחת: ${L(`${rows} × ${per} = ${rows * per}`)}. ב־${L(String(k))} קופסאות: ${L(`${k} × ${rows * per} = ${k * rows * per}`)}`,
+      {
+        ask: 'קודם: כמה עוגיות יש בקופסה אחת? אחר כך: כמה בכל הקופסאות?',
+        highlight: ['בכל קופסה', 'ובכל שורה', 'בסך הכול'],
+        visual: { kind: 'groups', n: k, per: rows * per, cols: per, total: '?' },
+        steps: [{ text: `${rows} × ${per} = ⬜`, answer: rows * per }],
+        after: `ועכשיו: כמה יש ב־${L(k)} קופסאות? 😉`,
+      },
     );
   }
   if (kind === 'timesLess') {
@@ -546,6 +695,20 @@ function word(r: Rng): Question {
       a * f - d,
       [[a * f, TRAP.step], [a + f - d, TRAP.add], [a * f + d, '"פחות" = מורידים.'], a * f - d + 1],
       `ל${p2.n}: ${L(`${a} × ${f} = ${a * f}`)}. ל${p3.n}: ${L(`${a * f} − ${d} = ${a * f - d}`)}`,
+      {
+        ask: `שני שלבים: קודם, כמה יש ל${p2.n}? (״פי ${L(f)}״ זה ${L(f)} פעמים.) אחר כך, ״פחות״ זה מורידים.`,
+        highlight: [`פי ${f}`, 'פחות'],
+        visual: {
+          kind: 'bar',
+          rows: [
+            { name: p1.n, segs: [seg(a)] },
+            { name: p2.n, segs: Array.from({ length: f }, () => seg(a)) },
+            { name: p3.n, segs: [seg(a * f - d, '?'), { ...seg(d), gap: true }] },
+          ],
+        },
+        steps: [{ text: `${a} × ${f} = ⬜`, answer: a * f }],
+        after: `ועכשיו מורידים ${L(d)} 😉`,
+      },
     );
   }
   if (kind === 'sumShare') {
@@ -558,6 +721,13 @@ function word(r: Rng): Question {
       half,
       [[a + b, TRAP.sum], Math.abs(a - b), half + 1, half - 1],
       `יחד: ${L(`${a} + ${b} = ${a + b}`)}. חצי לכל אחד: ${L(`${a + b} ÷ 2 = ${half}`)}`,
+      {
+        ask: 'קודם: כמה קלפים יש להם יחד? אחר כך מחלקים לשניים, שווה בשווה.',
+        highlight: ['יחד', 'שווה בשווה'],
+        visual: { kind: 'bar', rows: [{ segs: [seg(a), seg(b)] }, { segs: [seg(half, '?'), seg(half, '?')] }] },
+        steps: [{ text: `${a} + ${b} = ⬜`, answer: a + b }],
+        after: 'ועכשיו חצי מזה לכל אחד 😉',
+      },
     );
   }
   const n = 2 * int(r, 10, 16);
@@ -567,6 +737,13 @@ function word(r: Rng): Question {
     n / 2 - k,
     [[n / 2, TRAP.step], [n - k, 'שכחת שחצי יצאו לחוג.'], n / 2 + k, n / 2 - k + 1],
     `חצי מ־${L(String(n))} זה ${L(String(n / 2))}. ואז ${L(`${n / 2} − ${k} = ${n / 2 - k}`)}`,
+    {
+      ask: `קודם: כמה זה חצי מ־${L(n)}? אחר כך: עוד ${L(k)} ילדים הלכו, אז מורידים.`,
+      highlight: ['חצי', 'נשארו'],
+      visual: { kind: 'bar', rows: [{ segs: [seg(n / 2, 'חצי'), seg(k), seg(n / 2 - k, '?')] }], total: seg(n) },
+      steps: [{ text: `${n} ÷ 2 = ⬜`, answer: n / 2 }],
+      after: `ועכשיו מורידים את ה־${L(k)} שהלכו הביתה 😉`,
+    },
   );
 }
 
@@ -668,18 +845,34 @@ function time(r: Rng): Question {
 function sequence(r: Rng): Question {
   const kind = pick(r, ['step', 'alternate', 'double', 'growing', 'shrinking', 'twoSeries'] as const);
   const prompt = 'איזה מספר בא במקום סימן השאלה?';
-  const mk = (terms: number[], ans: number, wrongs: Wrong[], explain: string, hole = terms.length): Question => {
+  const mk = (terms: number[], ans: number, wrongs: Wrong[], explain: string, hint: Hint, hole = terms.length): Question => {
     const shown = [...terms.slice(0, hole).map(String), '?', ...terms.slice(hole + 1).map(String)];
-    return { type: 'sequence', prompt, lines: [shown.join(', ')], explain, ...numberChoice(r, ans, wrongs) };
+    return withHint({ type: 'sequence', prompt, lines: [shown.join(', ')], explain, ...numberChoice(r, ans, wrongs) }, hint);
   };
+  /** Boxes for the shown terms (and the '?'), with '?' arrows between neighbours. */
+  const chain = (shown: (number | '?')[], pairs: [number, number][], below: [number, number][] = []): Hint['visual'] => ({
+    kind: 'chain',
+    items: shown.map(String),
+    arcs: [...pairs.map(([from, to]) => ({ from, to, label: '?' })), ...below.map(([from, to]) => ({ from, to, label: '?', below: true }))],
+  });
+  const diff = (a: number, b: number) => (b >= a ? { text: `${a} + ⬜ = ${b}`, answer: b - a } : { text: `${a} − ⬜ = ${b}`, answer: a - b });
 
   if (kind === 'step') {
     const d = pick(r, [2, 3, 4, 5, 10]) * (r() < 0.3 ? -1 : 1);
     const start = d > 0 ? int(r, 1, 50) : int(r, 60, 110);
     const terms = Array.from({ length: 5 }, (_, i) => start + i * d);
     const hole = int(r, 2, 4);
+    const shown: (number | '?')[] = terms.map((t, i) => (i === hole ? '?' : t));
     return mk(terms, terms[hole], [terms[hole] + 1, terms[hole] - 1, terms[hole] + d, terms[hole] - d],
-      `כל פעם ${d > 0 ? 'מוסיפים' : 'מורידים'} ${L(String(Math.abs(d)))}`, hole);
+      `כל פעם ${d > 0 ? 'מוסיפים' : 'מורידים'} ${L(String(Math.abs(d)))}`, {
+        ask: 'מה הקפיצה בין שני המספרים הראשונים? בדקי שזו אותה קפיצה גם בהמשך.',
+        visual: chain(shown, [[0, 1], [1, 2], [2, 3], [3, 4]]),
+        steps: [[0, 1], [1, 2], [2, 3], [3, 4]]
+          .filter(([i, j]) => i !== hole && j !== hole)
+          .slice(0, 2)
+          .map(([i, j]) => diff(terms[i], terms[j])),
+        after: 'אותה קפיצה כל פעם. עכשיו מצאי את המספר במקום ה־? 😉',
+      }, hole);
   }
   if (kind === 'alternate') {
     const a = int(r, 1, 5);
@@ -687,14 +880,24 @@ function sequence(r: Rng): Question {
     const terms = [int(r, 1, 20)];
     for (let i = 0; i < 5; i++) terms.push(terms[i] + (i % 2 === 0 ? a : b));
     return mk(terms.slice(0, 5), terms[5], [terms[4] + b, terms[5] + 1, terms[5] - 1],
-      `מוסיפים לסירוגין ${L(`+${a}`)} ואז ${L(`+${b}`)}: ${L(`${terms[4]} + ${a} = ${terms[5]}`)}`);
+      `מוסיפים לסירוגין ${L(`+${a}`)} ואז ${L(`+${b}`)}: ${L(`${terms[4]} + ${a} = ${terms[5]}`)}`, {
+        ask: 'מה הקפיצות? האם זו אותה קפיצה כל פעם, או שהקפיצות מתחלפות?',
+        visual: chain([...terms.slice(0, 5), '?'], [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5]]),
+        steps: [diff(terms[0], terms[1]), diff(terms[1], terms[2]), diff(terms[2], terms[3])],
+        after: 'הקפיצות מתחלפות. איזו קפיצה באה עכשיו? 😉',
+      });
   }
   if (kind === 'double') {
     const start = int(r, 1, 6);
     const terms = Array.from({ length: 5 }, (_, i) => start * 2 ** i);
     const ans = terms[4];
     return mk(terms.slice(0, 4), ans, [[terms[3] + (terms[3] - terms[2]), 'כאן לא מוסיפים אותו מספר, אלא מכפילים.'], ans + 2, ans - 2],
-      `כל מספר הוא פי 2 מהקודם: ${L(`${terms[3]} × 2 = ${ans}`)}`);
+      `כל מספר הוא פי 2 מהקודם: ${L(`${terms[3]} × 2 = ${ans}`)}`, {
+        ask: 'הקפיצות גדלות! אולי זה לא ״ועוד״, אלא ״כפול״? בדקי: פי כמה כל מספר מהקודם?',
+        visual: chain([...terms.slice(0, 4), '?'], [[0, 1], [1, 2], [2, 3], [3, 4]]),
+        steps: [{ text: `${terms[0]} × ⬜ = ${terms[1]}`, answer: 2 }, { text: `${terms[1]} × ⬜ = ${terms[2]}`, answer: 2 }],
+        after: 'אותו דבר כל פעם. ומה בא אחרי המספר האחרון? 😉',
+      });
   }
   if (kind === 'growing' || kind === 'shrinking') {
     // growing: +2, +3, +4, +5 → +6 ; shrinking: −6, −5, −4, −3 → −2
@@ -706,7 +909,12 @@ function sequence(r: Rng): Question {
     const nextDiff = growing ? d0 + 4 : -(d0 - 4);
     const ans = terms[4] + nextDiff;
     return mk(terms, ans, [[terms[4] + diffs[3], 'ההפרש משתנה כל פעם, לא נשאר אותו דבר.'], ans + 1, ans - 1],
-      `ההפרשים: ${L(diffs.map((d) => (d > 0 ? `+${d}` : `${d}`)).join(', '))}, אז עכשיו ${L(nextDiff > 0 ? `+${nextDiff}` : String(nextDiff))}: ${L(String(ans))}`);
+      `ההפרשים: ${L(diffs.map((d) => (d > 0 ? `+${d}` : `${d}`)).join(', '))}, אז עכשיו ${L(nextDiff > 0 ? `+${nextDiff}` : String(nextDiff))}: ${L(String(ans))}`, {
+        ask: `מה הקפיצה בין כל שני מספרים? האם הקפיצה ${growing ? 'גדלה' : 'קטנה'}?`,
+        visual: chain([...terms, '?'], [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5]]),
+        steps: [diff(terms[0], terms[1]), diff(terms[1], terms[2]), diff(terms[2], terms[3])],
+        after: `הקפיצה ${growing ? 'גדלה' : 'קטנה'} כל פעם ב־${L(1)}. מה תהיה הקפיצה הבאה? 😉`,
+      });
   }
   // two interleaved series: 1, 4, 2, 8, 3, 12, ?
   const a0 = int(r, 1, 5);
@@ -715,7 +923,12 @@ function sequence(r: Rng): Question {
   for (let i = 0; i < 3; i++) terms.push(a0 + i, m * (a0 + i));
   const ans = a0 + 3;
   return mk(terms, ans, [[m * (a0 + 3), 'זה המספר הבא בסדרה השנייה. בודקים איזו סדרה ממשיכה.'], ans + 1, terms[5] + 1],
-    `שתי סדרות לסירוגין: ${L(`${a0}, ${a0 + 1}, ${a0 + 2}`)} (עוד 1) ו־${L(`${m * a0}, ${m * (a0 + 1)}, ${m * (a0 + 2)}`)} (פי ${L(String(m))}). עכשיו תורה של הראשונה: ${L(String(ans))}`);
+    `שתי סדרות לסירוגין: ${L(`${a0}, ${a0 + 1}, ${a0 + 2}`)} (עוד 1) ו־${L(`${m * a0}, ${m * (a0 + 1)}, ${m * (a0 + 2)}`)} (פי ${L(String(m))}). עכשיו תורה של הראשונה: ${L(String(ans))}`, {
+      ask: 'אין קפיצה אחת קבועה? אולי יש כאן שתי סדרות שמתחלפות! הסתכלי על כל מספר שני.',
+      visual: chain([...terms, '?'], [[0, 2], [2, 4], [4, 6]], [[1, 3], [3, 5]]),
+      steps: [{ text: `${a0} + ⬜ = ${a0 + 1}`, answer: 1 }, { text: `${m * a0} + ⬜ = ${m * (a0 + 1)}`, answer: m }],
+      after: 'עכשיו: של איזו סדרה התור? 😉',
+    });
 }
 
 // ---------- איזה תרגיל גדול יותר ----------

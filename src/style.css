@@ -1086,3 +1086,146 @@ bdi.m {
   font-size: 22px;
   white-space: nowrap;
 }
+
+/* ---------- 💡 hint ladder ---------- */
+
+.hints {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hint-btn {
+  align-self: flex-start;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 20px;
+  background: #fff8db;
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: 0 2px 0 #f1d98a;
+}
+
+.hint-btn:disabled {
+  background: transparent;
+  box-shadow: none;
+  opacity: 0.75;
+}
+
+.h-rung {
+  background: #fffdf3;
+  border: 2px solid #ffe9a3;
+  border-radius: 16px;
+  padding: 8px 12px;
+}
+
+.h-rung.new {
+  animation: fade-in 0.25s;
+}
+
+.h-title {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--purple);
+}
+
+.h-text,
+.h-after {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.55;
+}
+
+.h-after {
+  margin-top: 6px;
+  font-weight: 700;
+}
+
+mark.hl {
+  background: #fff1a8;
+  color: inherit;
+  border-radius: 4px;
+  padding: 0 2px;
+}
+
+.visual {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 2px auto;
+}
+
+.v-text {
+  font-family: system-ui, -apple-system, 'Segoe UI', Arial, sans-serif;
+}
+
+.h-step {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.h-step.shake {
+  animation: shake 0.4s;
+}
+
+.h-expr {
+  direction: ltr;
+  unicode-bidi: isolate;
+  font-size: 24px;
+  font-weight: 800;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.h-input,
+.h-val {
+  width: 58px;
+  height: 42px;
+  border: 3px dashed var(--purple);
+  border-radius: 10px;
+  font: inherit;
+  text-align: center;
+  color: var(--ink);
+  background: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.h-step.done .h-val {
+  border: 3px solid var(--teal);
+  background: #d8f7ef;
+}
+
+.h-step.given .h-val {
+  border: 3px solid var(--gold);
+  background: #fff3c4;
+}
+
+.h-ok {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--teal);
+  color: #fff;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.h-mark {
+  font-size: 20px;
+  color: var(--teal);
+  font-weight: 800;
+}
+
+.h-try {
+  font-size: 16px;
+  font-weight: 700;
+  color: #b4005a;
+}

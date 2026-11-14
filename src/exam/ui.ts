@@ -4,6 +4,8 @@ import { bankQuestions } from './bank';
 import { printMockExam } from './print';
 import { saveExam, type ExamRecord } from '../log';
 import { openParentScreen } from '../parent';
+import type { Hint } from './hints';
+import { renderVisual } from './visual';
 
 const LETTERS = ['א', 'ב', 'ג', 'ד'];
 /** Like the real test: each section has a time limit, but nobody announces how much time is left. */
@@ -12,6 +14,8 @@ const PRACTICE_SIZE = 10;
 const MATH_TOPICS: MathType[] = ['arith', 'missing', 'inequality', 'pictures', 'digit', 'word', 'proportion', 'time', 'sequence', 'compare'];
 
 type Section = { title: string; questions: Question[]; minutes: number };
+/** Practice hint progress for one question: rungs opened, steps solved, wrong tries on the current step. */
+type HintState = { level: number; solved: number; wrong: number; given: boolean[] };
 type Run = {
   mode: 'exam' | 'practice';
   label: string;
@@ -30,6 +34,7 @@ type Run = {
   timer: number;
   timedOut: boolean;
   passageOpen: boolean;
+  hints: HintState[][];
 };
 
 let app: HTMLElement;
@@ -198,6 +203,7 @@ function startRun(mode: Run['mode'], label: string, make: (seed: number) => Sect
     timer: 0,
     timedOut: false,
     passageOpen: true,
+    hints: sections.map((s) => s.questions.map(() => ({ level: 0, solved: 0, wrong: 0, given: [] }))),
   };
   if (mode === 'exam') renderSectionIntro();
   else renderQuestion();
@@ -309,6 +315,118 @@ function renderKeypad(q: Question, locked: boolean): HTMLElement {
   return wrap;
 }
 
+// ---------- 💡 hint ladder (practice only) ----------
+
+type Rung = 'ask' | 'visual' | 'steps';
+const rungs = (h: Hint): Rung[] => ['ask', ...(h.visual ? ['visual' as const] : []), ...(h.steps || h.after ? ['steps' as const] : [])];
+const RUNG_TITLE: Record<Rung, string> = { ask: '🔍 מה שואלים?', visual: '✏️ בואי נצייר', steps: '👣 צעד אחר צעד' };
+/** Only the rung that was just opened fades in (the ladder re-renders on every step). */
+let justOpened = false;
+
+/** Wrap each highlighted word of the prompt in <mark>. */
+function markWords(node: HTMLElement, words: string[]): void {
+  for (const w of words) {
+    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+    for (let t = walker.nextNode() as Text | null; t; t = walker.nextNode() as Text | null) {
+      const at = t.data.indexOf(w);
+      if (at < 0 || t.parentElement?.tagName === 'MARK') continue;
+      const rest = t.splitText(at);
+      rest.splitText(w.length);
+      const mark = el('mark', 'hl');
+      rest.replaceWith(mark);
+      mark.append(rest);
+      break;
+    }
+  }
+}
+
+/** "47 + ⬜ = 50" with the ⬜ as an input (current step), a filled box (solved) or a hint value (given). */
+function stepRow(text: string, state: 'todo' | 'done' | 'given', value: number, onTry: (n: number, row: HTMLElement) => void): HTMLElement {
+  const row = el('div', `h-step ${state}`);
+  const expr = el('div', 'h-expr');
+  expr.dir = 'ltr';
+  const [before, after] = text.split('⬜');
+  expr.append(document.createTextNode(before));
+  if (state === 'todo') {
+    const input = el('input', 'h-input');
+    input.inputMode = 'numeric';
+    input.pattern = '[0-9]*';
+    input.maxLength = 3;
+    input.setAttribute('aria-label', 'המספר החסר');
+    const go = () => input.value && onTry(Number(input.value), row);
+    input.addEventListener('keydown', (e) => e.key === 'Enter' && go());
+    input.addEventListener('input', () => (input.value = input.value.replace(/\D/g, '')));
+    expr.append(input);
+    row.append(expr, button('h-ok', '✓', go));
+  } else {
+    expr.append(el('span', 'h-val', String(value)));
+    row.append(expr, el('span', 'h-mark', state === 'done' ? '✓' : '👀'));
+  }
+  expr.append(document.createTextNode(after));
+  return row;
+}
+
+function renderHint(q: Question, st: HintState, prompt: HTMLElement): HTMLElement {
+  const h = q.hint!;
+  const all = rungs(h);
+  const box = el('section', 'hints');
+  if (st.level >= 1 && h.highlight?.length) markWords(prompt, h.highlight);
+  all.slice(0, st.level).forEach((rung, k) => {
+    const part = el('div', `h-rung h-${rung}${justOpened && k === st.level - 1 ? ' new' : ''}`);
+    part.append(el('p', 'h-title', RUNG_TITLE[rung]));
+    if (rung === 'ask') part.append(rich('p', 'h-text', h.ask));
+    if (rung === 'visual') {
+      const svg = renderVisual(h.visual!);
+      if (svg) part.append(svg);
+    }
+    if (rung === 'steps') {
+      const steps = h.steps ?? [];
+      steps.slice(0, st.solved + 1).forEach((step, k) => {
+        const state = k < st.solved ? (st.given[k] ? 'given' : 'done') : 'todo';
+        part.append(
+          stepRow(step.text, state, step.answer, (n, row) => {
+            if (n === step.answer) {
+              st.solved++;
+              st.wrong = 0;
+              renderQuestion();
+              return;
+            }
+            st.wrong++;
+            if (st.wrong >= 2) {
+              st.given[k] = true;
+              st.solved++;
+              st.wrong = 0;
+              renderQuestion();
+              return;
+            }
+            row.classList.remove('shake');
+            void row.offsetWidth;
+            row.classList.add('shake');
+            row.querySelector('.h-try')?.remove();
+            row.append(el('span', 'h-try', 'נסי שוב 🙂'));
+            const input = row.querySelector('input')!;
+            input.value = '';
+            input.focus();
+          }),
+        );
+      });
+      if (st.solved >= steps.length && h.after) part.append(rich('p', 'h-after', h.after));
+    }
+    box.append(part);
+  });
+  const done = st.level >= all.length;
+  const more = button('hint-btn', done ? 'זהו, עכשיו את! 💪' : st.level ? '💡 עוד רמז' : '💡 רמז', () => {
+    st.level++;
+    justOpened = true;
+    renderQuestion();
+    document.querySelector('.h-rung:last-of-type')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  });
+  more.disabled = done;
+  box.append(more);
+  justOpened = false;
+  return box;
+}
+
 function renderQuestion(): void {
   const r = run!;
   const sec = r.sections[r.s];
@@ -324,9 +442,11 @@ function renderQuestion(): void {
   if (q.passageId) screen.append(renderPassage(q.passageId));
 
   const card = el('section', 'q-card');
-  card.append(rich('p', 'q-prompt', q.prompt));
+  const prompt = rich('p', 'q-prompt', q.prompt);
+  card.append(prompt);
   if (q.lines) card.append(mathLines(q.lines));
   screen.append(card);
+  if (practice && !locked && q.hint) screen.append(renderHint(q, r.hints[r.s][r.i], prompt));
 
   if (isOpen(q)) {
     screen.append(renderKeypad(q, locked));
