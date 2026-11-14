@@ -41,3 +41,42 @@ export function recordProblem(session: Session, entry: ProblemLog): void {
 }
 
 export const clearSessions = (): void => localStorage.removeItem(KEY);
+
+// ---------- exam / practice results ----------
+
+export type ExamItem = {
+  type: string;
+  prompt: string;
+  chosen: number | null;
+  correct: number;
+  ok: boolean;
+  seconds: number;
+};
+
+export type ExamRecord = {
+  id: string;
+  startedAt: string;
+  mode: 'exam' | 'practice';
+  label: string;
+  seed: number;
+  durationSec: number;
+  timedOut: boolean;
+  items: ExamItem[];
+};
+
+const EXAM_KEY = 'math-adventure.exams.v1';
+
+export function loadExams(): ExamRecord[] {
+  try {
+    return JSON.parse(localStorage.getItem(EXAM_KEY) ?? '[]') as ExamRecord[];
+  } catch {
+    return [];
+  }
+}
+
+export function saveExam(rec: ExamRecord): void {
+  const others = loadExams().filter((e) => e.id !== rec.id);
+  localStorage.setItem(EXAM_KEY, JSON.stringify([...others, rec]));
+}
+
+export const clearExams = (): void => localStorage.removeItem(EXAM_KEY);

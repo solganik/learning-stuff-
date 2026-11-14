@@ -21,6 +21,7 @@ import { PROBLEMS, type CoachUntil, type Problem } from './problems';
 import { PLAYER_NAME, REWARD_TEXT, SMART_FOR_REWARD } from './config';
 import { recordProblem, startSession, type ProblemLog, type Session, type StepRecord } from './log';
 import { openParentScreen } from './parent';
+import { renderExamHome } from './exam/ui';
 
 type Play = {
   problem: Problem;
@@ -99,7 +100,8 @@ function renderStart(): void {
     header(''),
     el('p', 'big', `שלום ${PLAYER_NAME}! 👋`),
     el('p', 'lead', 'לפני שעונים, מחפשים עשרת שלמה 🔍\nדרך חכמה = ⭐⭐⭐'),
-    button('cta', 'בואי נתחיל', () => renderProblem()),
+    button('cta', '🔟 משחק העשרות', () => renderProblem()),
+    button('cta second', '📝 הכנה למבחן', () => renderExamHome(app, renderStart)),
   );
   app.replaceChildren(screen);
 }

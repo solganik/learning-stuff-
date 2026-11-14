@@ -1,10 +1,56 @@
-import { clearSessions, loadSessions, type Session } from './log';
+import { clearExams, clearSessions, loadExams, loadSessions, type ExamRecord, type Session } from './log';
+import { TYPE_NAMES, type QType } from './exam/questions';
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
   if (cls) node.className = cls;
   if (text) node.textContent = text;
   return node;
+}
+
+function examSection(exams: ExamRecord[]): HTMLElement {
+  const box = el('section', 'p-session');
+  box.append(el('h3', '', 'הכנה למבחן: דיוק לפי סוג שאלה (כל הזמן)'));
+  const byType = new Map<string, { ok: number; n: number; secs: number }>();
+  for (const e of exams)
+    for (const x of e.items) {
+      const v = byType.get(x.type) ?? { ok: 0, n: 0, secs: 0 };
+      v.n++;
+      v.secs += x.seconds;
+      if (x.ok) v.ok++;
+      byType.set(x.type, v);
+    }
+  const t1 = el('table');
+  const h1 = el('tr');
+  for (const h of ['סוג', 'נכונות', 'אחוז', 'שנ׳ לשאלה']) h1.append(el('th', '', h));
+  t1.append(h1);
+  for (const [type, v] of byType) {
+    const row = el('tr');
+    for (const c of [TYPE_NAMES[type as QType] ?? type, `${v.ok}/${v.n}`, `${Math.round((100 * v.ok) / v.n)}%`, String(Math.round(v.secs / v.n))])
+      row.append(el('td', '', c));
+    t1.append(row);
+  }
+  box.append(t1, el('h3', '', 'מבחנים ותרגולים'));
+  const t2 = el('table');
+  const h2 = el('tr');
+  for (const h of ['תאריך', 'מה', 'ציון', 'בלי תשובה', 'דקות', 'נגמר הזמן']) h2.append(el('th', '', h));
+  t2.append(h2);
+  for (const e of [...exams].reverse()) {
+    const row = el('tr');
+    const ok = e.items.filter((x) => x.ok).length;
+    for (const c of [
+      new Date(e.startedAt).toLocaleString('he-IL'),
+      e.label,
+      `${ok}/${e.items.length}`,
+      String(e.items.filter((x) => x.chosen === null).length),
+      String(Math.round(e.durationSec / 60)),
+      e.timedOut ? 'כן' : '',
+    ])
+      row.append(el('td', '', c));
+    t2.append(row);
+  }
+  box.append(t2);
+  return box;
 }
 
 function sessionTable(s: Session): HTMLElement {
@@ -66,7 +112,8 @@ async function copyText(text: string, fallback: HTMLTextAreaElement): Promise<bo
 export function openParentScreen(): void {
   if (document.querySelector('.parent')) return;
   const sessions = loadSessions().reverse();
-  const json = JSON.stringify(sessions, null, 2);
+  const exams = loadExams();
+  const json = JSON.stringify({ sessions, exams }, null, 2);
 
   const overlay = el('div', 'parent');
   const close = el('button', 'p-btn', 'סגירה');
@@ -85,13 +132,15 @@ export function openParentScreen(): void {
   clear.onclick = () => {
     if (!confirm('למחוק את כל היומן?')) return;
     clearSessions();
+    clearExams();
     overlay.remove();
   };
 
   const bar = el('div', 'p-bar');
   bar.append(el('h2', '', 'יומן הורים'), copy, clear, close, status);
   overlay.append(bar);
-  if (!sessions.length) overlay.append(el('p', '', 'אין עדיין נתונים.'));
+  if (!sessions.length && !exams.length) overlay.append(el('p', '', 'אין עדיין נתונים.'));
+  if (exams.length) overlay.append(examSection(exams));
   for (const s of sessions) overlay.append(sessionTable(s));
   overlay.append(ta);
   document.body.append(overlay);
